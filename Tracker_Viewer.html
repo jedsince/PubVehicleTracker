@@ -48,7 +48,7 @@
 <body>
     
     <div class="header">
-        <h1>Live Transport View</h1>
+        <h1>Live Transport Viewer</h1>
         <p>Your contributions improve accuracy!</p>
     </div>
 
@@ -71,7 +71,6 @@
         mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
         
         // Default center and tracked vehicle ID
-        // Coordinates: [Longitude, Latitude]
         const DEFAULT_CENTER = [121.0284546, 14.928021]; 
         const TRACKED_VEHICLE_ID = 1; 
         
@@ -83,8 +82,8 @@
         const toggleButton = document.getElementById('toggleButton');
         const statusDiv = document.getElementById('status');
 
-        // --- SUPABASE INITIALIZATION (This now runs AFTER the SDK is loaded) ---
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        // 🌟 FIX: Renamed the local variable to 'supabaseClient' to avoid TDZ conflict.
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 
         // --- MAP INITIALIZATION ---
@@ -109,7 +108,6 @@
 
         // --- LOCATION SNAPPING (Simple Logic) ---
         function simpleSnap(rawLat, rawLon, accuracy) {
-            // Sends raw data. Add Mapbox Map Matching API call here for robust snapping.
             return { lat: rawLat, lon: rawLon }; 
         }
 
@@ -126,8 +124,8 @@
 
             const snappedLocation = simpleSnap(rawLat, rawLon, acc);
 
-            // UPDATE the record in the Supabase table 
-            const { error: updateError } = await supabase
+            // Using the renamed client variable: supabaseClient
+            const { error: updateError } = await supabaseClient
                 .from('vehicle_location')
                 .update({ 
                     latitude: snappedLocation.lat, 
@@ -148,7 +146,6 @@
          * Function to handle errors during location retrieval.
          */
         function error(err) {
-            // Check the code to see if permission was denied (code 1)
             if (err.code === 1) {
                 statusDiv.textContent = 'Location sharing DENIED by user. Please allow access.';
             } else {
@@ -169,7 +166,6 @@
             
             const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
             
-            // The critical call to start watching the position and trigger permission prompt
             watchID = navigator.geolocation.watchPosition(success, error, options);
             isTracking = true;
 
@@ -202,7 +198,8 @@
          * Subscribes to the Supabase Realtime channel for location updates.
          */
         function subscribeToLocationUpdates() {
-            supabase.channel('vehicle_updates')
+            // Using the renamed client variable: supabaseClient
+            supabaseClient.channel('vehicle_updates') 
                 .on(
                     'postgres_changes',
                     { event: 'UPDATE', schema: 'public', table: 'vehicle_location', filter: `id=eq.${TRACKED_VEHICLE_ID}` },
