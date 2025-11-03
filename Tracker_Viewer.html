@@ -12,6 +12,7 @@
 
     <style>
         body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        /* Ensure the map container has a defined height */
         #map { width: 100%; height: 75vh; }
         .header {
             background-color: #007bff;
@@ -70,6 +71,7 @@
         mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
         
         // Default center and tracked vehicle ID
+        // Coordinates: [Longitude, Latitude]
         const DEFAULT_CENTER = [121.0284546, 14.928021]; 
         const TRACKED_VEHICLE_ID = 1; // ID of the row created in the vehicle_location table
         
@@ -107,8 +109,7 @@
 
         // --- LOCATION SNAPPING (Simple Logic) ---
         function simpleSnap(rawLat, rawLon, accuracy) {
-            // For a production app, this is where a call to Mapbox's "Map Matching API" 
-            // would go to truly snap it to the road network.
+            // Sends raw data. Add Mapbox Map Matching API call here for robust snapping.
             return { lat: rawLat, lon: rawLon }; 
         }
 
@@ -136,7 +137,8 @@
 
             if (updateError) {
                  console.error('Supabase update error:', updateError);
-                 statusDiv.textContent = 'Error sharing location. Check Supabase rules.';
+                 // If this error shows up, check your Supabase RLS policies!
+                 statusDiv.textContent = 'Error sharing location. Check Supabase RLS.'; 
             } else {
                  statusDiv.textContent = `Sharing location. Accuracy: ${acc.toFixed(1)}m.`;
                  statusDiv.style.color = '#28a745';
@@ -147,7 +149,12 @@
          * Function to handle errors during location retrieval.
          */
         function error(err) {
-            statusDiv.textContent = `Tracking stopped. ERROR(${err.code}): ${err.message}`;
+            // Check the code to see if permission was denied (code 1)
+            if (err.code === 1) {
+                statusDiv.textContent = 'Location sharing DENIED by user. Please allow access.';
+            } else {
+                statusDiv.textContent = `Tracking stopped. ERROR(${err.code}): ${err.message}`;
+            }
             statusDiv.style.color = '#dc3545';
             stopTracking();
         }
@@ -162,6 +169,8 @@
             }
             
             const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
+            
+            // The critical call to start watching the position and trigger permission prompt
             watchID = navigator.geolocation.watchPosition(success, error, options);
             isTracking = true;
 
@@ -194,4 +203,42 @@
          * Subscribes to the Supabase Realtime channel for location updates.
          */
         function subscribeToLocationUpdates() {
-            supabase.
+            supabase.channel('vehicle_updates')
+                .on(
+                    'postgres_changes',
+                    { event: 'UPDATE', schema: 'public', table: 'vehicle_location', filter: `id=eq.${TRACKED_VEHICLE_ID}` },
+                    (payload) => {
+                        const data = payload.new;
+                        if (data && busMarker) {
+                            const newLngLat = [data.longitude, data.latitude];
+
+                            // 1. Update the Marker Position
+                            busMarker.setLngLat(newLngLat);
+                            
+                            // 2. Update Popup Info
+                            busMarker.setPopup(new mapboxgl.Popup().setHTML(`
+                                <h4>Live Vehicle Location</h4>
+                                <p>Lat: ${data.latitude.toFixed(6)}<br>Lon: ${data.longitude.toFixed(6)}</p>
+                            `));
+
+                            // 3. Pan the map (only if we aren't actively sharing our own location)
+                            if (!isTracking) {
+                                map.flyTo({ center: newLngLat, speed: 0.5 });
+                            }
+                        }
+                    }
+                )
+                .subscribe(); // Start listening!
+        }
+
+        // --- EVENT LISTENERS ---
+        toggleButton.onclick = () => {
+            if (isTracking) {
+                stopTracking();
+            } else {
+                startTracking();
+            }
+        };
+    </script>
+</body>
+</html>
