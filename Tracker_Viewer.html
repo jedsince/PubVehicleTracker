@@ -3,15 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚌 Unified Transport Tracker (Contribute & View)</title>
+    <title>🚌 Secure Transport Sharer & Viewer</title>
 
     <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
     <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
     
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
     <style>
         body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
-        /* Ensure the map container has a defined height */
-        #map { width: 100%; height: 75vh; }
+        #map { width: 100%; height: 60vh; } 
         .header {
             background-color: #007bff;
             color: white;
@@ -26,6 +27,18 @@
             justify-content: space-around;
             align-items: center;
         }
+        #auth-container {
+            padding: 20px; 
+            text-align: center; 
+            background-color: #e9ecef;
+            border-bottom: 2px solid #007bff;
+        }
+        .input-group input, .input-group button {
+            padding: 10px; 
+            margin: 5px; 
+            border: 1px solid #ccc; 
+            border-radius: 4px;
+        }
         button {
             padding: 10px 20px;
             font-size: 16px;
@@ -34,59 +47,208 @@
             cursor: pointer;
             transition: background-color 0.3s;
         }
-        .share-btn {
-            background-color: #28a745; /* Green for start sharing */
-            color: white;
-        }
-        .stop-btn {
-            background-color: #dc3545; /* Red for stop sharing */
-            color: white;
-        }
+        .share-btn { background-color: #28a745; color: white; }
+        .stop-btn { background-color: #dc3545; color: white; }
         .status-text { font-weight: bold; }
+        
+        /* CSS for the custom directional arrow marker (Triangle Shape) */
+        .direction-arrow {
+            /* This creates a triangle pointing upwards by default (0 degrees) */
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-bottom: 20px solid; /* The colorable part of the arrow */
+            position: relative;
+            border-radius: 2px;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
     </style>
 </head>
 <body>
     
+    <div id="auth-container">
+        <h2>Location Sharer Login</h2>
+        <div class="input-group">
+            <input type="email" id="email" placeholder="Sharer Email">
+            <input type="password" id="password" placeholder="Password">
+            <button id="loginButton">Login</button>
+        </div>
+    </div>
+
     <div class="header">
         <h1>Live Transport Viewer</h1>
-        <p>Your contributions improve accuracy!</p>
+        <p>Login is required to share location, viewing is public.</p>
     </div>
 
     <div class="controls">
-        <button id="toggleButton" class="share-btn">Start Sharing My Location</button>
-        <div id="status" class="status-text">Viewing live updates.</div>
+        <button id="toggleButton" class="share-btn" disabled>Start Sharing Location</button>
+        <div id="status" class="status-text">Checking login status...</div>
     </div>
 
     <div id='map'></div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    
     <script>
         // --- CONFIGURATION ---
-        // SUPABASE CREDENTIALS
         const SUPABASE_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
-
-        // Mapbox Token
         mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
         
-        // Default center and tracked vehicle ID
         const DEFAULT_CENTER = [121.0284546, 14.928021]; 
-        const TRACKED_VEHICLE_ID = 1; 
         
+        // Speed in Meters Per Second (m/s) for color coding the arrows
+        const SPEED_THRESHOLDS = {
+            FAST: 8.33,   // approx. 30 km/h (Green)
+            MODERATE: 2.78, // approx. 10 km/h (Yellow)
+            SLOW: 0.5    // approx. 1.8 km/h (Orange)
+        };
+
         // --- STATE & UTILITIES ---
         let watchID = null; 
         let isTracking = false;
-        let busMarker = null; 
+        
+        // Map to store all active Mapbox Markers (Key: tracking_id, Value: Mapbox.Marker)
+        const activeMarkers = new Map(); 
+
+        let currentTrackingId = null; 
+        let currentVehicleType = null;
 
         const toggleButton = document.getElementById('toggleButton');
         const statusDiv = document.getElementById('status');
+        const authContainer = document.getElementById('auth-container');
+        const loginButton = document.getElementById('loginButton');
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
 
-        // 🌟 FIX: Renamed the local variable to 'supabaseClient' to avoid TDZ conflict.
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        // --- MARKER UTILITIES (Directional Arrow Logic) ---
+            
+        /**
+         * Determines marker color based on speed using defined thresholds.
+         */
+        function getSpeedColor(speed) {
+            if (speed >= SPEED_THRESHOLDS.FAST) {
+                return '#28a745'; // Green: Fast
+            } else if (speed >= SPEED_THRESHOLDS.MODERATE) {
+                return '#ffc107'; // Yellow: Moderate
+            } else if (speed > SPEED_THRESHOLDS.SLOW) {
+                return '#fd7e14'; // Orange: Slow
+            } else {
+                return '#dc3545'; // Red: Stopped/Very Slow
+            }
+        }
 
+        /**
+         * Creates or updates a Mapbox Marker, now using directional arrows.
+         */
+        function updateMarker(data) {
+            const trackingId = data.tracking_id;
+            if (!data.latitude || !data.longitude || !trackingId) return; 
+
+            const type = data.vehicle_type || 'default';
+            const newLngLat = [data.longitude, data.latitude];
+            const speed = data.speed || 0;
+            const heading = data.heading || 0; // Geolocation API: 0 is North, clockwise.
+
+            const arrowColor = getSpeedColor(speed);
+
+            // 1. Check if marker exists
+            let marker = activeMarkers.get(trackingId);
+
+            if (!marker) {
+                const el = document.createElement('div');
+                el.className = 'direction-arrow';
+
+                // Create and add the Mapbox Marker
+                marker = new mapboxgl.Marker({ element: el, anchor: 'center' }) 
+                    .setLngLat(newLngLat)
+                    .setPopup(new mapboxgl.Popup({ offset: 25 })) 
+                    .addTo(map);
+
+                activeMarkers.set(trackingId, marker);
+            }
+
+            // 2. Dynamic Updates (Color and Rotation)
+            const markerElement = marker.getElement();
+            
+            markerElement.style.borderBottomColor = arrowColor;
+            markerElement.style.transform = `rotate(${heading}deg)`;
+
+
+            // 3. Update position and popup content
+            const speedKPH = speed * 3.6;
+
+            marker.setLngLat(newLngLat)
+                  .getPopup()
+                  .setHTML(`
+                    <h4>${type.toUpperCase()} ID: ${trackingId}</h4>
+                    <p>Speed: ${speedKPH.toFixed(1)} km/h<br>Heading: ${heading.toFixed(0)}&deg;</p>
+                  `);
+            
+            // 4. Pan the map (focusing logic)
+            if (isTracking && trackingId === currentTrackingId) {
+                 map.flyTo({ center: newLngLat, speed: 0.5 });
+            } else if (!isTracking) {
+                 map.flyTo({ center: newLngLat, speed: 0.5 });
+            }
+        }
+
+
+        // --- AUTHENTICATION & SESSION HANDLING ---
+
+        async function initializeSharerSession(user) {
+            const { data, error } = await supabaseClient
+                .from('vehicle_location')
+                .select('tracking_id, vehicle_type')
+                .eq('sharer_id', user.id)
+                .single(); 
+
+            if (error || !data) {
+                authContainer.style.display = 'block';
+                statusDiv.textContent = 'Error: No vehicle assigned to this account, or RLS is blocking access.';
+                toggleButton.disabled = true;
+                return;
+            }
+
+            currentTrackingId = data.tracking_id;
+            currentVehicleType = data.vehicle_type;
+
+            authContainer.style.display = 'none'; 
+            statusDiv.textContent = `Sharer logged in as ${currentTrackingId} (${currentVehicleType}). Ready to share.`;
+            statusDiv.style.color = '#007bff'; 
+            toggleButton.disabled = false;
+        }
+
+        async function handleLogin() {
+            const email = emailInput.value;
+            const password = passwordInput.value;
+            statusDiv.textContent = 'Attempting login...';
+
+            const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+
+            if (error) {
+                statusDiv.textContent = `Login Failed: ${error.message}`;
+                statusDiv.style.color = '#dc3545';
+            } else {
+                const { data: { user } } = await supabaseClient.auth.getUser();
+                if (user) {
+                    initializeSharerSession(user);
+                }
+            }
+        }
+        
+        supabaseClient.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+                initializeSharerSession(session.user);
+            } else {
+                toggleButton.disabled = true;
+                statusDiv.textContent = `Please log in to share location.`;
+            }
+        });
 
         // --- MAP INITIALIZATION ---
+
         const map = new mapboxgl.Map({
             container: 'map',
             style: 'mapbox://styles/mapbox/streets-v12',
@@ -94,78 +256,82 @@
             zoom: 12
         });
 
-        map.on('load', () => {
-             // Create a marker for the vehicle
-             busMarker = new mapboxgl.Marker({ color: '#007bff' }) 
-                .setLngLat(DEFAULT_CENTER)
-                .setPopup(new mapboxgl.Popup().setHTML("<h4>Live Vehicle Location</h4><p>Waiting for first update...</p>"))
-                .addTo(map);
+        map.on('load', async () => {
+             // 1. Fetch ALL initial vehicle locations to populate the map
+             const { data, error } = await supabaseClient
+                .from('vehicle_location')
+                .select('*');
+
+             if (data) {
+                 data.forEach(updateMarker);
+             }
              
-             // Start listening for real-time updates immediately
+             // 2. Start listening for real-time updates for all changes
              subscribeToLocationUpdates();
         });
 
+        // --- TRACKING FUNCTIONS (SENDER) ---
 
-        // --- LOCATION SNAPPING (Simple Logic) ---
         function simpleSnap(rawLat, rawLon, accuracy) {
             return { lat: rawLat, lon: rawLon }; 
         }
 
-
-        // --- TRACKING FUNCTIONS (SENDER) ---
-
         /**
-         * Function to handle a successful raw location update. PUSHES to Supabase.
+         * Handles successful geolocation position updates and sends to Supabase.
          */
         async function success(position) {
             const rawLat = position.coords.latitude;
             const rawLon = position.coords.longitude;
             const acc = position.coords.accuracy;
+            const rawSpeed = position.coords.speed || 0;    // m/s
+            const rawHeading = position.coords.heading || 0; // degrees
 
             const snappedLocation = simpleSnap(rawLat, rawLon, acc);
 
-            // Using the renamed client variable: supabaseClient
             const { error: updateError } = await supabaseClient
                 .from('vehicle_location')
                 .update({ 
                     latitude: snappedLocation.lat, 
-                    longitude: snappedLocation.lon 
+                    longitude: snappedLocation.lon,
+                    vehicle_type: currentVehicleType,
+                    speed: rawSpeed,                  // NEW: Send speed
+                    heading: rawHeading               // NEW: Send heading
                 })
-                .eq('id', TRACKED_VEHICLE_ID);
+                .eq('tracking_id', currentTrackingId); 
 
             if (updateError) {
                  console.error('Supabase update error:', updateError);
-                 statusDiv.textContent = 'Error sharing location. Check Supabase RLS.'; 
+                 statusDiv.textContent = 'ERROR: Update failed (Check RLS & login status).'; 
+                 statusDiv.style.color = '#dc3545';
             } else {
-                 statusDiv.textContent = `Sharing location. Accuracy: ${acc.toFixed(1)}m.`;
-                 statusDiv.style.color = '#28a745';
+                 const speedKPH = rawSpeed * 3.6;
+                 statusDiv.textContent = `Sharing location. Speed: ${speedKPH.toFixed(1)} km/h.`;
+                 statusDiv.style.color = getSpeedColor(rawSpeed);
             }
         }
 
-        /**
-         * Function to handle errors during location retrieval.
-         */
         function error(err) {
-            if (err.code === 1) {
+            if (err.code === 1) { 
                 statusDiv.textContent = 'Location sharing DENIED by user. Please allow access.';
             } else {
                 statusDiv.textContent = `Tracking stopped. ERROR(${err.code}): ${err.message}`;
             }
             statusDiv.style.color = '#dc3545';
-            stopTracking();
+            stopTracking(); 
         }
 
-        /**
-         * Starts the continuous location tracking.
-         */
         function startTracking() {
             if (!navigator.geolocation) {
                 statusDiv.textContent = 'Geolocation is not supported by your browser.';
                 return;
             }
+            if (!currentTrackingId) { 
+                statusDiv.textContent = 'Please log in first and ensure a vehicle is assigned.';
+                return;
+            }
             
+            // Options request speed and heading data
             const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
-            
             watchID = navigator.geolocation.watchPosition(success, error, options);
             isTracking = true;
 
@@ -174,19 +340,15 @@
             toggleButton.classList.add('stop-btn');
         }
 
-        /**
-         * Stops the continuous location tracking.
-         */
         function stopTracking() {
              if (watchID !== null) {
                 navigator.geolocation.clearWatch(watchID);
                 watchID = null;
             }
             isTracking = false;
-            statusDiv.textContent = 'Viewing live updates. Ready to share.';
-            statusDiv.style.color = '#007bff';
-
-            toggleButton.textContent = "Start Sharing My Location";
+            statusDiv.textContent = `Viewing live updates. Ready to share.`;
+            statusDiv.style.color = '#007bff'; 
+            toggleButton.textContent = "Start Sharing Location";
             toggleButton.classList.remove('stop-btn');
             toggleButton.classList.add('share-btn');
         }
@@ -194,37 +356,16 @@
 
         // --- TRACKING VIEWER (RECEIVER) ---
 
-        /**
-         * Subscribes to the Supabase Realtime channel for location updates.
-         */
         function subscribeToLocationUpdates() {
-            // Using the renamed client variable: supabaseClient
-            supabaseClient.channel('vehicle_updates') 
+            supabaseClient.channel('all_vehicles') 
                 .on(
                     'postgres_changes',
-                    { event: 'UPDATE', schema: 'public', table: 'vehicle_location', filter: `id=eq.${TRACKED_VEHICLE_ID}` },
+                    { event: 'UPDATE', schema: 'public', table: 'vehicle_location' }, 
                     (payload) => {
-                        const data = payload.new;
-                        if (data && busMarker) {
-                            const newLngLat = [data.longitude, data.latitude];
-
-                            // 1. Update the Marker Position
-                            busMarker.setLngLat(newLngLat);
-                            
-                            // 2. Update Popup Info
-                            busMarker.setPopup(new mapboxgl.Popup().setHTML(`
-                                <h4>Live Vehicle Location</h4>
-                                <p>Lat: ${data.latitude.toFixed(6)}<br>Lon: ${data.longitude.toFixed(6)}</p>
-                            `));
-
-                            // 3. Pan the map (only if we aren't actively sharing our own location)
-                            if (!isTracking) {
-                                map.flyTo({ center: newLngLat, speed: 0.5 });
-                            }
-                        }
+                        updateMarker(payload.new);
                     }
                 )
-                .subscribe(); // Start listening!
+                .subscribe();
         }
 
         // --- EVENT LISTENERS ---
@@ -235,6 +376,8 @@
                 startTracking();
             }
         };
+
+        loginButton.onclick = handleLogin;
     </script>
 </body>
 </html>
