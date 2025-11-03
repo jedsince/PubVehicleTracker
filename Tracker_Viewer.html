@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚌 Unified Transport Tracker (Contribute & View)</title>
+
+    <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        #map { width: 100%; height: 75vh; }
+        .header {
+            background-color: #007bff;
+            color: white;
+            padding: 15px;
+            text-align: center;
+        }
+        .controls {
+            padding: 10px 20px;
+            background-color: #f8f9fa;
+            border-top: 1px solid #ddd;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .share-btn {
+            background-color: #28a745; /* Green for start sharing */
+            color: white;
+        }
+        .stop-btn {
+            background-color: #dc3545; /* Red for stop sharing */
+            color: white;
+        }
+        .status-text { font-weight: bold; }
+    </style>
+</head>
+<body>
+    
+    <div class="header">
+        <h1>Live Transport Viewer</h1>
+        <p>Your contributions improve accuracy!</p>
+    </div>
+
+    <div class="controls">
+        <button id="toggleButton" class="share-btn">Start Sharing My Location</button>
+        <div id="status" class="status-text">Viewing live updates.</div>
+    </div>
+
+    <div id='map'></div>
+
+    <script>
+        // --- CONFIGURATION ---
+        // SUPABASE CREDENTIALS
+        const SUPABASE_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
+
+        // Mapbox Token
+        mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
+        
+        // Default center and tracked vehicle ID
+        const DEFAULT_CENTER = [121.0284546, 14.928021]; 
+        const TRACKED_VEHICLE_ID = 1; // ID of the row created in the vehicle_location table
+        
+        // --- STATE & UTILITIES ---
+        let watchID = null; 
+        let isTracking = false;
+        let busMarker = null; 
+
+        const toggleButton = document.getElementById('toggleButton');
+        const statusDiv = document.getElementById('status');
+
+        // --- SUPABASE INITIALIZATION ---
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+
+        // --- MAP INITIALIZATION ---
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v12',
+            center: DEFAULT_CENTER,
+            zoom: 12
+        });
+
+        map.on('load', () => {
+             // Create a marker for the vehicle
+             busMarker = new mapboxgl.Marker({ color: '#007bff' }) 
+                .setLngLat(DEFAULT_CENTER)
+                .setPopup(new mapboxgl.Popup().setHTML("<h4>Live Vehicle Location</h4><p>Waiting for first update...</p>"))
+                .addTo(map);
+             
+             // Start listening for real-time updates immediately
+             subscribeToLocationUpdates();
+        });
+
+
+        // --- LOCATION SNAPPING (Simple Logic) ---
+        function simpleSnap(rawLat, rawLon, accuracy) {
+            // For a production app, this is where a call to Mapbox's "Map Matching API" 
+            // would go to truly snap it to the road network.
+            return { lat: rawLat, lon: rawLon }; 
+        }
+
+
+        // --- TRACKING FUNCTIONS (SENDER) ---
+
+        /**
+         * Function to handle a successful raw location update. PUSHES to Supabase.
+         */
+        async function success(position) {
+            const rawLat = position.coords.latitude;
+            const rawLon = position.coords.longitude;
+            const acc = position.coords.accuracy;
+
+            const snappedLocation = simpleSnap(rawLat, rawLon, acc);
+
+            // UPDATE the record in the Supabase table (This replaces socket.emit)
+            const { error: updateError } = await supabase
+                .from('vehicle_location')
+                .update({ 
+                    latitude: snappedLocation.lat, 
+                    longitude: snappedLocation.lon 
+                })
+                .eq('id', TRACKED_VEHICLE_ID);
+
+            if (updateError) {
+                 console.error('Supabase update error:', updateError);
+                 statusDiv.textContent = 'Error sharing location. Check Supabase rules.';
+            } else {
+                 statusDiv.textContent = `Sharing location. Accuracy: ${acc.toFixed(1)}m.`;
+                 statusDiv.style.color = '#28a745';
+            }
+        }
+
+        /**
+         * Function to handle errors during location retrieval.
+         */
+        function error(err) {
+            statusDiv.textContent = `Tracking stopped. ERROR(${err.code}): ${err.message}`;
+            statusDiv.style.color = '#dc3545';
+            stopTracking();
+        }
+
+        /**
+         * Starts the continuous location tracking.
+         */
+        function startTracking() {
+            if (!navigator.geolocation) {
+                statusDiv.textContent = 'Geolocation is not supported by your browser.';
+                return;
+            }
+            
+            const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
+            watchID = navigator.geolocation.watchPosition(success, error, options);
+            isTracking = true;
+
+            toggleButton.textContent = "Stop Sharing Location";
+            toggleButton.classList.remove('share-btn');
+            toggleButton.classList.add('stop-btn');
+        }
+
+        /**
+         * Stops the continuous location tracking.
+         */
+        function stopTracking() {
+             if (watchID !== null) {
+                navigator.geolocation.clearWatch(watchID);
+                watchID = null;
+            }
+            isTracking = false;
+            statusDiv.textContent = 'Viewing live updates. Ready to share.';
+            statusDiv.style.color = '#007bff';
+
+            toggleButton.textContent = "Start Sharing My Location";
+            toggleButton.classList.remove('stop-btn');
+            toggleButton.classList.add('share-btn');
+        }
+
+
+        // --- TRACKING VIEWER (RECEIVER) ---
+
+        /**
+         * Subscribes to the Supabase Realtime channel for location updates.
+         */
+        function subscribeToLocationUpdates() {
+            supabase.
