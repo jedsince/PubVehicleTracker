@@ -172,6 +172,8 @@
         const statusDiv = document.getElementById('status');
         const authContainer = document.getElementById('auth-container');
         const loginButton = document.getElementById('loginButton');
+        const emailInput = document.getElementById('email'); // Re-added input elements
+        const passwordInput = document.getElementById('password'); // Re-added input elements
 
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         
@@ -231,7 +233,6 @@
             const arrowColor = getSpeedColor(speed);
             let marker = activeMarkers.get(trackingId);
             
-            // ... (Marker creation and update logic remains the same) ...
             if (!marker) {
                 const el = document.createElement('div');
                 el.className = 'direction-arrow';
@@ -450,6 +451,25 @@
             toggleButton.disabled = false;
         }
         
+        async function handleLogin() { // <-- MOVED handleLogin here
+            const email = emailInput.value;
+            const password = passwordInput.value;
+            statusDiv.textContent = 'Attempting login...';
+
+            const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+
+            if (error) {
+                statusDiv.textContent = `Login Failed: ${error.message}`;
+                statusDiv.style.color = '#dc3545';
+            } else {
+                const { data: { user } } = await supabaseClient.auth.getUser();
+                if (user) {
+                    initializeSharerSession(user);
+                }
+            }
+        }
+
+
         async function writeTerminalToSupabase(name, lat, lon, routeId) {
             statusDiv.textContent = `Attempting to save ${name} (Route ${routeId || 'N/A'})...`;
             
@@ -459,7 +479,7 @@
                     name: name,
                     latitude: lat,
                     longitude: lon,
-                    route_id: routeId || null // Save null if empty
+                    route_id: routeId || null 
                 });
 
             if (error) {
@@ -545,7 +565,6 @@
                 
                 if (currentTrip.isTrackingTrip && !currentTrip.stopTimer) {
                     currentTrip.stopTimer = setTimeout(() => {
-                        // ... (End terminal proximity logic remains the same) ...
                         const endPoint = currentTrip.lastStop;
                         let closestEndTerminal = null;
                         let minEndDistance = Infinity;
@@ -593,7 +612,6 @@
                 })
                 .eq('tracking_id', currentTrackingId); 
             
-            // ... (Status updates remain the same) ...
             if (updateError) {
                  console.error('Supabase update error:', updateError);
                  statusDiv.textContent = 'ERROR: Update failed.'; 
@@ -608,7 +626,6 @@
             }
         }
 
-        // ... (Error and Start/Stop tracking functions remain the same) ...
         function error(err) {
             if (err.code === 1) { 
                 statusDiv.textContent = 'Location sharing DENIED by user. Please allow access.';
@@ -672,7 +689,8 @@
 
 
         // --- EVENT LISTENERS ---
-        document.getElementById('loginButton').onclick = handleLogin;
+        // Moved loginButton.onclick here to ensure handleLogin is defined
+        document.getElementById('loginButton').onclick = handleLogin; 
         
         document.getElementById('toggleButton').onclick = () => {
             if (isTracking) {
@@ -694,3 +712,4 @@
     </script>
 </body>
 </html>
+
