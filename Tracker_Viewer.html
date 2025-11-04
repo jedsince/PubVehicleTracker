@@ -88,6 +88,7 @@
             <input type="email" id="email" placeholder="Sharer Email">
             <input type="password" id="password" placeholder="Password">
             <button id="loginButton">Login</button>
+            <button id="signOutButton" style="background-color: #6c757d; color: white; margin-left: 10px; display: none;">Sign Out</button>
         </div>
     </div>
 
@@ -149,8 +150,8 @@
         
         // 🛑 NEW: Add the user IDs (from the auth.users table) that should have Terminal Admin access.
         const ADMIN_SHARER_IDS = [
-            '20d2c77d-4177-44f2-98ed-7389c9913000', // Example Admin 1 ID
-            '8a0e8d0d-2e11-4f9e-9b37-2917d598377a'  // Example Admin 2 ID
+            '20d2c77d-4177-44f2-98ed-7389c9913000', // Example Admin 1 ID - REPLACE THIS
+            '8a0e8d0d-2e11-4f9e-9b37-2917d598377a'  // Example Admin 2 ID - REPLACE THIS
         ]; 
         
         const DEFAULT_CENTER = [121.0284546, 14.928021]; 
@@ -200,6 +201,7 @@
         const loginButton = document.getElementById('loginButton');
         const emailInput = document.getElementById('email'); 
         const passwordInput = document.getElementById('password'); 
+        const signOutButton = document.getElementById('signOutButton'); // 🛑 NEW
 
         // Menu Elements
         const terminalMenuContainer = document.getElementById('terminal-menu-container');
@@ -584,9 +586,15 @@
         }
 
 
-        // --- AUTHENTICATION & LOGIN (Updated for Menu Forking) ---
+        // --- AUTHENTICATION & LOGIN (Updated for Menu Forking and Sign Out) ---
         
         async function initializeSharerSession(user) {
+            // Reset visibility for a fresh state
+            terminalMenuContainer.style.display = 'none';
+            signOutButton.style.display = 'none';
+            toggleButton.disabled = true;
+            authContainer.style.display = 'block'; // Always start with auth form visible, hide if successful
+
             const { data, error } = await supabaseClient
                 .from('vehicle_location')
                 .select('tracking_id, vehicle_type')
@@ -595,21 +603,23 @@
 
             // Check if the user is a Sharer (has a vehicle assigned)
             if (error || !data) {
-                // If not a sharer, check if they are an admin without a vehicle (e.g., a route manager)
+                // User is logged in, but NO vehicle is assigned to them
                 const isAdmin = ADMIN_SHARER_IDS.includes(user.id);
                 
                 if (isAdmin) {
-                    authContainer.style.display = 'none'; 
+                    authContainer.style.display = 'none'; // Hide login form
                     terminalMenuContainer.style.display = 'flex'; // Show Terminal Tools for admin
                     toggleButton.disabled = true; // Cannot share without a vehicle
+                    signOutButton.style.display = 'inline-block'; // Show sign out button
                     statusDiv.textContent = 'Admin logged in. Terminal Tools enabled. Location sharing disabled (no vehicle assigned).';
                     statusDiv.style.color = '#ffc107'; 
                     return;
                 }
                 
-                // Regular logged-in user without a vehicle
-                authContainer.style.display = 'block'; 
+                // Regular logged-in user without a vehicle assigned
+                // Keep authContainer visible to allow sign out if they wish
                 terminalMenuContainer.style.display = 'none'; // Hide Terminal Tools
+                signOutButton.style.display = 'inline-block'; // Show sign out button
                 statusDiv.textContent = 'Login successful, but no vehicle is assigned. Sharing disabled.';
                 toggleButton.disabled = true;
                 statusDiv.style.color = '#dc3545';
@@ -620,7 +630,8 @@
             currentTrackingId = data.tracking_id;
             currentVehicleType = data.vehicle_type;
 
-            authContainer.style.display = 'none'; 
+            authContainer.style.display = 'none'; // Hide login form as they are a sharer
+            signOutButton.style.display = 'inline-block'; // Show sign out button
             
             // Check for Tier 2 Admin Access
             if (ADMIN_SHARER_IDS.includes(user.id)) {
@@ -645,12 +656,38 @@
             if (error) {
                 statusDiv.textContent = `Login Failed: ${error.message}`;
                 statusDiv.style.color = '#dc3545';
+                signOutButton.style.display = 'none'; // Hide sign out on failed login
             } else {
                 const { data: { user } } = await supabaseClient.auth.getUser();
                 if (user) {
                     initializeSharerSession(user);
                 }
             }
+        }
+
+        async function handleSignOut() { // 🛑 NEW FUNCTION
+            const { error } = await supabaseClient.auth.signOut();
+
+            if (error) {
+                console.error('Sign Out Error:', error);
+                statusDiv.textContent = `Sign Out Error: ${error.message}`;
+                statusDiv.style.color = '#dc3545';
+                return;
+            }
+
+            // Reset all application state
+            stopTracking(); 
+            currentTrackingId = null;
+            currentVehicleType = null;
+
+            // Reset UI for signed out state
+            authContainer.style.display = 'block'; // Show login form
+            signOutButton.style.display = 'none'; // Hide sign out button
+            toggleButton.disabled = true;
+            terminalMenuContainer.style.display = 'none'; // Hide admin tools
+            
+            statusDiv.textContent = 'Signed out successfully. Viewing live updates publicly.';
+            statusDiv.style.color = '#007bff';
         }
         
 
@@ -894,8 +931,9 @@
         }
 
 
-        // --- EVENT LISTENERS (Unchanged) ---
+        // --- EVENT LISTENERS ---
         document.getElementById('loginButton').onclick = handleLogin; 
+        signOutButton.onclick = handleSignOut; // 🛑 NEW
         
         document.getElementById('toggleButton').onclick = () => {
             if (isTracking) {
@@ -911,6 +949,8 @@
                 initializeSharerSession(session.user);
             } else {
                 toggleButton.disabled = true;
+                terminalMenuContainer.style.display = 'none'; // Ensure hidden if not logged in
+                signOutButton.style.display = 'none'; // Ensure hidden if not logged in
                 statusDiv.textContent = `Please log in to share location.`;
             }
         });
