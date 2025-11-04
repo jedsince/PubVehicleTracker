@@ -147,6 +147,12 @@
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
         mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
         
+        // 🛑 NEW: Add the user IDs (from the auth.users table) that should have Terminal Admin access.
+        const ADMIN_SHARER_IDS = [
+            '20d2c77d-4177-44f2-98ed-7389c9913000', // Example Admin 1 ID
+            '8a0e8d0d-2e11-4f9e-9b37-2917d598377a'  // Example Admin 2 ID
+        ]; 
+        
         const DEFAULT_CENTER = [121.0284546, 14.928021]; 
         
         const SPEED_THRESHOLDS = {
@@ -195,7 +201,10 @@
         const emailInput = document.getElementById('email'); 
         const passwordInput = document.getElementById('password'); 
 
-        // New Manual Select Elements
+        // Menu Elements
+        const terminalMenuContainer = document.getElementById('terminal-menu-container');
+        
+        // Manual Select Elements
         const startTerminalSelect = document.getElementById('startTerminalSelect');
         const endTerminalSelect = document.getElementById('endTerminalSelect');
         const drawManualRouteButton = document.getElementById('drawManualRouteButton');
@@ -239,7 +248,7 @@
         }
 
 
-        // --- MAPBOX & TERMINAL DISPLAY ---
+        // --- MAPBOX & TERMINAL DISPLAY (Unchanged) ---
         
         function updateMarker(data) {
             const trackingId = data.tracking_id;
@@ -337,10 +346,6 @@
          * Fetches and displays the route using Mapbox Directions API.
          */
         async function fetchAndDisplayRoute(startTerminal, endTerminal) {
-            // Note: We intentionally DO NOT clear the route here. 
-            // The sharer will call clearDisplayedRoute when they stop tracking.
-            
-            // IMPORTANT: Mapbox requires LONGITUDE, LATITUDE format
             const startCoords = `${startTerminal.longitude},${startTerminal.latitude}`;
             const endCoords = `${endTerminal.longitude},${endTerminal.latitude}`;
             
@@ -388,7 +393,6 @@
                 .single();
 
             if (error || !data) {
-                // No active route found for this vehicle, or multiple results (shouldn't happen with RLS/PK)
                 return; 
             }
 
@@ -407,7 +411,7 @@
             }
         }
 
-        // --- REAL-TIME SUBSCRIPTION ---
+        // --- REAL-TIME SUBSCRIPTION (Unchanged) ---
         function subscribeToLocationUpdates() { 
             supabaseClient.channel('all_vehicles') 
                 .on(
@@ -431,7 +435,7 @@
 
         }
 
-        // --- MAP INITIALIZATION ---
+        // --- MAP INITIALIZATION (Unchanged) ---
         const map = new mapboxgl.Map({
             container: 'map',
             style: 'mapbox://styles/mapbox/streets-v12',
@@ -580,7 +584,7 @@
         }
 
 
-        // --- AUTHENTICATION & LOGIN (Unchanged) ---
+        // --- AUTHENTICATION & LOGIN (Updated for Menu Forking) ---
         
         async function initializeSharerSession(user) {
             const { data, error } = await supabaseClient
@@ -589,20 +593,43 @@
                 .eq('sharer_id', user.id)
                 .single(); 
 
+            // Check if the user is a Sharer (has a vehicle assigned)
             if (error || !data) {
-                document.getElementById('terminal-menu-container').style.display = 'none';
-                authContainer.style.display = 'block';
-                statusDiv.textContent = 'Error: No vehicle assigned to this account, or RLS is blocking access.';
+                // If not a sharer, check if they are an admin without a vehicle (e.g., a route manager)
+                const isAdmin = ADMIN_SHARER_IDS.includes(user.id);
+                
+                if (isAdmin) {
+                    authContainer.style.display = 'none'; 
+                    terminalMenuContainer.style.display = 'flex'; // Show Terminal Tools for admin
+                    toggleButton.disabled = true; // Cannot share without a vehicle
+                    statusDiv.textContent = 'Admin logged in. Terminal Tools enabled. Location sharing disabled (no vehicle assigned).';
+                    statusDiv.style.color = '#ffc107'; 
+                    return;
+                }
+                
+                // Regular logged-in user without a vehicle
+                authContainer.style.display = 'block'; 
+                terminalMenuContainer.style.display = 'none'; // Hide Terminal Tools
+                statusDiv.textContent = 'Login successful, but no vehicle is assigned. Sharing disabled.';
                 toggleButton.disabled = true;
+                statusDiv.style.color = '#dc3545';
                 return;
             }
 
+            // User is a Sharer (Driver or Passenger-as-Beacon)
             currentTrackingId = data.tracking_id;
             currentVehicleType = data.vehicle_type;
 
             authContainer.style.display = 'none'; 
-            document.getElementById('terminal-menu-container').style.display = 'flex';
             
+            // Check for Tier 2 Admin Access
+            if (ADMIN_SHARER_IDS.includes(user.id)) {
+                terminalMenuContainer.style.display = 'flex'; // Show Terminal Tools
+            } else {
+                terminalMenuContainer.style.display = 'none'; // Hide Terminal Tools
+            }
+            
+            // Tier 1 Sharer Access (Always enabled if tracking_id exists)
             statusDiv.textContent = `Sharer logged in as ${currentTrackingId} (${currentVehicleType}). Ready to share.`;
             statusDiv.style.color = '#007bff'; 
             toggleButton.disabled = false;
@@ -627,7 +654,7 @@
         }
         
 
-        // --- TRACKING SENDER LOGIC (Updated for active_routes) ---
+        // --- TRACKING SENDER LOGIC (Unchanged) ---
 
         async function success(position) {
             const rawLat = position.coords.latitude;
@@ -646,7 +673,7 @@
 
             if (manualStartId && manualEndId) {
                 manualStartTerminal = allTerminals.find(t => t.id == manualStartId);
-                manualEndTerminal = allTerminals.find(t => t.id == manualEndId);
+                manualEndTerminal = allTerminals.find(t => t.id == endId);
             }
 
             // --- TRIP LOGIC START ---
@@ -706,7 +733,7 @@
                         
                         fetchAndDisplayRoute(startTerminalToUse, endTerminalToUse);
 
-                        // NEW: Save active route to Supabase for viewers
+                        // Save active route to Supabase for viewers
                         const { error: routeError } = await supabaseClient
                             .from('active_routes')
                             .upsert({
@@ -730,7 +757,7 @@
                 currentTrip.lastStop = { lat: rawLat, lon: rawLon, timestamp: timestamp };
                 
                 if (currentTrip.isTrackingTrip && !currentTrip.stopTimer) {
-                    currentTrip.stopTimer = setTimeout(async () => { // Made async for Supabase call
+                    currentTrip.stopTimer = setTimeout(async () => {
                         const endPoint = currentTrip.lastStop;
                         let closestEndTerminal = null;
                         let minEndDistance = Infinity;
@@ -761,10 +788,10 @@
                         
                         statusDiv.textContent = endStatusText + ' Ready for next trip.';
 
-                        // NEW: Clear active route in Supabase
+                        // Clear active route in Supabase
                         await supabaseClient
                             .from('active_routes')
-                            .update({ is_active: false }) // Mark as inactive
+                            .update({ is_active: false })
                             .eq('tracking_id', currentTrackingId);
 
                     }, MIN_STOP_TIME_MS); 
@@ -910,7 +937,7 @@
                 if (startTerminal && startTerminal.route_id) {
                     
                     const destinations = allTerminals.filter(t => 
-                        t.route_id === startTerminal.route_id && t.id !== startId
+                        t.route_id === startTerminal.route_id && t.id !== startTerminal.id
                     );
 
                     destinations.forEach(terminal => {
