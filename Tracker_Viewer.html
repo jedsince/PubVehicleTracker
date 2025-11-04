@@ -325,9 +325,14 @@
             console.log(`Loaded ${allTerminals.length} terminals and populated dropdowns.`);
         }
 
+        /**
+         * Fetches and displays the route using Mapbox Directions API.
+         * Includes a robust check for the map source before setting data.
+         */
         async function fetchAndDisplayRoute(startTerminal, endTerminal) {
             clearDisplayedRoute(); 
 
+            // IMPORTANT: Mapbox requires LONGITUDE, LATITUDE format
             const startCoords = `${startTerminal.longitude},${startTerminal.latitude}`;
             const endCoords = `${endTerminal.longitude},${endTerminal.latitude}`;
             
@@ -343,10 +348,17 @@
                         type: 'FeatureCollection',
                         features: [{ type: 'Feature', geometry: route }]
                     };
-                    map.getSource(TRIP_ROUTE_SOURCE_ID).setData(geoJson);
-                    console.log(`Route drawn: ${startTerminal.name} to ${endTerminal.name}`);
+                    
+                    const routeSource = map.getSource(TRIP_ROUTE_SOURCE_ID);
+                    if (routeSource) {
+                        routeSource.setData(geoJson);
+                        console.log(`Route drawn successfully: ${startTerminal.name} to ${endTerminal.name}`);
+                    } else {
+                        console.error(`ERROR: Map source '${TRIP_ROUTE_SOURCE_ID}' not found. Cannot draw route.`);
+                    }
+
                 } else {
-                    console.warn('Mapbox Directions API error:', data.code, data.message);
+                    console.warn('Mapbox Directions API error:', data.code, data.message || 'Unknown error');
                 }
             } catch (apiError) {
                 console.error('Error fetching Mapbox Directions:', apiError);
@@ -420,7 +432,6 @@
 
 
         // --- PINNING AND TERMINAL MANAGEMENT ---
-
         function togglePinningMode() {
             isPinningMode = !isPinningMode;
             const button = document.getElementById('dropPinButton');
