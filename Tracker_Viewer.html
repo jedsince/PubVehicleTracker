@@ -278,10 +278,18 @@
                     <p>Speed: ${speedKPH.toFixed(1)} km/h<br>Heading: ${heading.toFixed(0)}&deg;</p>
                   `);
             
-            if (isTracking && trackingId === currentTrackingId) {
+            const isCurrentUser = isTracking && trackingId === currentTrackingId;
+
+            if (isCurrentUser) {
                  map.flyTo({ center: newLngLat, speed: 0.5 });
-            } else if (!isTracking) {
-                 map.flyTo({ center: newLngLat, speed: 0.5 });
+            } else {
+                 // Viewer mode: Center on the most recent update if tracking is off
+                 map.flyTo({ center: newLngLat, speed: 0.5 }); 
+            }
+            
+            // NEW: If it's not the sharer's vehicle, check if it has an active route
+            if (!isCurrentUser) {
+                fetchAndDisplayViewerRoute(trackingId); 
             }
         }
 
@@ -327,11 +335,11 @@
 
         /**
          * Fetches and displays the route using Mapbox Directions API.
-         * Includes a robust check for the map source before setting data.
          */
         async function fetchAndDisplayRoute(startTerminal, endTerminal) {
-            clearDisplayedRoute(); 
-
+            // Note: We intentionally DO NOT clear the route here. 
+            // The sharer will call clearDisplayedRoute when they stop tracking.
+            
             // IMPORTANT: Mapbox requires LONGITUDE, LATITUDE format
             const startCoords = `${startTerminal.longitude},${startTerminal.latitude}`;
             const endCoords = `${endTerminal.longitude},${endTerminal.latitude}`;
@@ -364,6 +372,34 @@
                 console.error('Error fetching Mapbox Directions:', apiError);
             }
         }
+
+        /**
+         * Fetches active route data from Supabase for a given tracking ID and displays it.
+         */
+        async function fetchAndDisplayViewerRoute(trackingId) {
+            // Only draw a single route for the current viewer (the latest one updated)
+            clearDisplayedRoute(); 
+
+            const { data, error } = await supabaseClient
+                .from('active_routes')
+                .select('*')
+                .eq('tracking_id', trackingId)
+                .eq('is_active', true)
+                .single();
+
+            if (error || !data) {
+                // No active route found for this vehicle, or multiple results (shouldn't happen with RLS/PK)
+                return; 
+            }
+
+            const startTerminal = { latitude: data.start_lat, longitude: data.start_lon, name: data.start_name };
+            const endTerminal = { latitude: data.end_lat, longitude: data.end_lon, name: data.end_name };
+            
+            fetchAndDisplayRoute(startTerminal, endTerminal);
+            
+            console.log(`Viewer: Displaying active trip for ${trackingId}: ${data.start_name} to ${data.end_name}`);
+        }
+
 
         function clearDisplayedRoute() {
             if (map.getSource(TRIP_ROUTE_SOURCE_ID)) {
@@ -431,7 +467,7 @@
         });
 
 
-        // --- PINNING AND TERMINAL MANAGEMENT ---
+        // --- PINNING AND TERMINAL MANAGEMENT (Unchanged) ---
         function togglePinningMode() {
             isPinningMode = !isPinningMode;
             const button = document.getElementById('dropPinButton');
@@ -544,7 +580,7 @@
         }
 
 
-        // --- AUTHENTICATION & LOGIN ---
+        // --- AUTHENTICATION & LOGIN (Unchanged) ---
         
         async function initializeSharerSession(user) {
             const { data, error } = await supabaseClient
@@ -591,7 +627,7 @@
         }
         
 
-        // --- TRACKING SENDER LOGIC ---
+        // --- TRACKING SENDER LOGIC (Updated for active_routes) ---
 
         async function success(position) {
             const rawLat = position.coords.latitude;
@@ -602,7 +638,6 @@
             const snappedLocation = simpleSnap(rawLat, rawLon, position.coords.accuracy); 
             const isMoving = rawSpeed > SPEED_THRESHOLDS.SLOW;
 
-            // 1. Check for manual route drawing override
             const manualStartId = startTerminalSelect.value;
             const manualEndId = endTerminalSelect.value;
             
@@ -625,7 +660,7 @@
                     let startTerminalToUse = null;
                     let endTerminalToUse = null;
 
-                    // **NEW LOGIC: Prioritize Manual Selection**
+                    // Prioritize Manual Selection
                     if (manualStartTerminal && manualEndTerminal) {
                         startTerminalToUse = manualStartTerminal;
                         endTerminalToUse = manualEndTerminal;
@@ -633,7 +668,7 @@
                         statusDiv.textContent = `Trip Started (Manual): ${startTerminalToUse.name} -> ${endTerminalToUse.name}!`;
                         
                     } else {
-                        // **FALLBACK: Proximity Detection**
+                        // FALLBACK: Proximity Detection
                         let closestStartTerminal = null;
                         let minStartDistance = Infinity;
 
@@ -664,11 +699,30 @@
                         }
                     }
 
-                    // --- ROUTE DRAWING (Applies to both Manual and Auto) ---
+                    // --- ROUTE DRAWING & PERSISTENCE ---
                     if (startTerminalToUse && endTerminalToUse) {
                         currentTrip.identifiedStartTerminal = startTerminalToUse;
                         currentTrip.identifiedEndTerminal = endTerminalToUse; 
+                        
                         fetchAndDisplayRoute(startTerminalToUse, endTerminalToUse);
+
+                        // NEW: Save active route to Supabase for viewers
+                        const { error: routeError } = await supabaseClient
+                            .from('active_routes')
+                            .upsert({
+                                tracking_id: currentTrackingId,
+                                start_name: startTerminalToUse.name,
+                                end_name: endTerminalToUse.name,
+                                start_lat: startTerminalToUse.latitude,
+                                start_lon: startTerminalToUse.longitude,
+                                end_lat: endTerminalToUse.latitude,
+                                end_lon: endTerminalToUse.longitude,
+                                is_active: true
+                            });
+
+                        if (routeError) {
+                            console.error('Error saving active route:', routeError);
+                        }
                     }
                 }
 
@@ -676,7 +730,7 @@
                 currentTrip.lastStop = { lat: rawLat, lon: rawLon, timestamp: timestamp };
                 
                 if (currentTrip.isTrackingTrip && !currentTrip.stopTimer) {
-                    currentTrip.stopTimer = setTimeout(() => {
+                    currentTrip.stopTimer = setTimeout(async () => { // Made async for Supabase call
                         const endPoint = currentTrip.lastStop;
                         let closestEndTerminal = null;
                         let minEndDistance = Infinity;
@@ -706,11 +760,18 @@
                         currentTrip.identifiedEndTerminal = null;   
                         
                         statusDiv.textContent = endStatusText + ' Ready for next trip.';
+
+                        // NEW: Clear active route in Supabase
+                        await supabaseClient
+                            .from('active_routes')
+                            .update({ is_active: false }) // Mark as inactive
+                            .eq('tracking_id', currentTrackingId);
+
                     }, MIN_STOP_TIME_MS); 
                 }
             }
             
-            // --- SUPABASE UPDATE ---
+            // --- SUPABASE UPDATE (Location) ---
             const { error: updateError } = await supabaseClient
                 .from('vehicle_location')
                 .update({ 
@@ -771,7 +832,7 @@
             toggleButton.classList.add('stop-btn');
         }
 
-        function stopTracking() {
+        async function stopTracking() {
              if (intervalID !== null) {
                 clearInterval(intervalID);
                 intervalID = null;
@@ -781,6 +842,15 @@
                 currentTrip.stopTimer = null;
             }
             clearDisplayedRoute();
+            
+            // Clear active route in Supabase when sharer manually stops
+            if(currentTrackingId) {
+                await supabaseClient
+                    .from('active_routes')
+                    .update({ is_active: false })
+                    .eq('tracking_id', currentTrackingId);
+            }
+
             currentTrip.isTrackingTrip = false;
             currentTrip.startPoint = null;
             currentTrip.lastStop = null;
@@ -797,7 +867,7 @@
         }
 
 
-        // --- EVENT LISTENERS ---
+        // --- EVENT LISTENERS (Unchanged) ---
         document.getElementById('loginButton').onclick = handleLogin; 
         
         document.getElementById('toggleButton').onclick = () => {
@@ -829,7 +899,7 @@
         document.getElementById('savePinButton').onclick = savePinnedTerminal;
 
 
-        // --- MANUAL TRIP CONTROL LISTENERS ---
+        // --- MANUAL TRIP CONTROL LISTENERS (Unchanged) ---
         startTerminalSelect.onchange = function() {
             const startId = this.value;
             endTerminalSelect.innerHTML = '<option value="">-- Select Destination --</option>';
