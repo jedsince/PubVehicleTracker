@@ -91,7 +91,7 @@
     <script>
         // --- CONFIGURATION ---
         const SUPABASE_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRdenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
         mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
         
         const DEFAULT_CENTER = [121.0284546, 14.928021]; 
@@ -102,12 +102,14 @@
             MODERATE: 2.78, // approx. 10 km/h (Yellow)
             SLOW: 0.5    // approx. 1.8 km/h (Orange)
         };
+        
+        const PING_RATE_MS = 30000; // 30 seconds for battery conservation
 
         // --- STATE & UTILITIES ---
-        let watchID = null; 
+        let intervalID = null; // Used for setInterval timer
         let isTracking = false;
         
-        // Map to store all active Mapbox Markers (Key: tracking_id, Value: Mapbox.Marker)
+        // Map to store all active Mapbox Markers (Key: tracking_id)
         const activeMarkers = new Map(); 
 
         let currentTrackingId = null; 
@@ -149,7 +151,7 @@
             const type = data.vehicle_type || 'default';
             const newLngLat = [data.longitude, data.latitude];
             const speed = data.speed || 0;
-            const heading = data.heading || 0; // Geolocation API: 0 is North, clockwise.
+            const heading = data.heading || 0; 
 
             const arrowColor = getSpeedColor(speed);
 
@@ -294,8 +296,8 @@
                     latitude: snappedLocation.lat, 
                     longitude: snappedLocation.lon,
                     vehicle_type: currentVehicleType,
-                    speed: rawSpeed,                  // NEW: Send speed
-                    heading: rawHeading               // NEW: Send heading
+                    speed: rawSpeed,                  // Send speed
+                    heading: rawHeading               // Send heading
                 })
                 .eq('tracking_id', currentTrackingId); 
 
@@ -320,6 +322,9 @@
             stopTracking(); 
         }
 
+        /**
+         * Starts geolocation tracking using a 30-second interval.
+         */
         function startTracking() {
             if (!navigator.geolocation) {
                 statusDiv.textContent = 'Geolocation is not supported by your browser.';
@@ -330,20 +335,31 @@
                 return;
             }
             
-            // Options request speed and heading data
+            // Options request high accuracy, speed, and heading data
             const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
-            watchID = navigator.geolocation.watchPosition(success, error, options);
+            
+            // Immediately call success once to get the first reading
+            navigator.geolocation.getCurrentPosition(success, error, options);
+
+            // Set up the interval to get the position every 30 seconds
+            intervalID = setInterval(() => {
+                navigator.geolocation.getCurrentPosition(success, error, options);
+            }, PING_RATE_MS); 
+
             isTracking = true;
 
-            toggleButton.textContent = "Stop Sharing Location";
+            toggleButton.textContent = "Stop Sharing Location (30s rate)";
             toggleButton.classList.remove('share-btn');
             toggleButton.classList.add('stop-btn');
         }
 
+        /**
+         * Stops location tracking by clearing the interval.
+         */
         function stopTracking() {
-             if (watchID !== null) {
-                navigator.geolocation.clearWatch(watchID);
-                watchID = null;
+             if (intervalID !== null) {
+                clearInterval(intervalID);
+                intervalID = null;
             }
             isTracking = false;
             statusDiv.textContent = `Viewing live updates. Ready to share.`;
@@ -381,3 +397,4 @@
     </script>
 </body>
 </html>
+
