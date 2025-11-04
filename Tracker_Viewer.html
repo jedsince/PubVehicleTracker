@@ -53,12 +53,11 @@
         
         /* CSS for the custom directional arrow marker (Triangle Shape) */
         .direction-arrow {
-            /* This creates a triangle pointing upwards by default (0 degrees) */
             width: 0;
             height: 0;
             border-left: 8px solid transparent;
             border-right: 8px solid transparent;
-            border-bottom: 20px solid; /* The colorable part of the arrow */
+            border-bottom: 20px solid;
             position: relative;
             border-radius: 2px;
             box-shadow: 0 0 5px rgba(0,0,0,0.5);
@@ -91,6 +90,7 @@
     <script>
         // --- CONFIGURATION ---
         const SUPABASE_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
+        // CRITICAL FIX: The correct anon key is used here.
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
         mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
         
@@ -104,17 +104,25 @@
         };
         
         const PING_RATE_MS = 30000; // 30 seconds for battery conservation
+        const MIN_STOP_TIME_MS = 180000; // 3 minutes to confirm a terminal stop
 
         // --- STATE & UTILITIES ---
-        let intervalID = null; // Used for setInterval timer
+        let intervalID = null; 
         let isTracking = false;
         
-        // Map to store all active Mapbox Markers (Key: tracking_id)
         const activeMarkers = new Map(); 
 
         let currentTrackingId = null; 
         let currentVehicleType = null;
 
+        // --- TRIP STATE VARIABLES ---
+        let currentTrip = {
+            isTrackingTrip: false, 
+            startPoint: null,      
+            lastStop: null,        
+            stopTimer: null        
+        };
+        
         const toggleButton = document.getElementById('toggleButton');
         const statusDiv = document.getElementById('status');
         const authContainer = document.getElementById('auth-container');
@@ -126,24 +134,18 @@
         
         // --- MARKER UTILITIES (Directional Arrow Logic) ---
             
-        /**
-         * Determines marker color based on speed using defined thresholds.
-         */
         function getSpeedColor(speed) {
             if (speed >= SPEED_THRESHOLDS.FAST) {
-                return '#28a745'; // Green: Fast
+                return '#28a745'; 
             } else if (speed >= SPEED_THRESHOLDS.MODERATE) {
-                return '#ffc107'; // Yellow: Moderate
+                return '#ffc107'; 
             } else if (speed > SPEED_THRESHOLDS.SLOW) {
-                return '#fd7e14'; // Orange: Slow
+                return '#fd7e14'; 
             } else {
-                return '#dc3545'; // Red: Stopped/Very Slow
+                return '#dc3545'; 
             }
         }
 
-        /**
-         * Creates or updates a Mapbox Marker, now using directional arrows.
-         */
         function updateMarker(data) {
             const trackingId = data.tracking_id;
             if (!data.latitude || !data.longitude || !trackingId) return; 
@@ -154,15 +156,12 @@
             const heading = data.heading || 0; 
 
             const arrowColor = getSpeedColor(speed);
-
-            // 1. Check if marker exists
             let marker = activeMarkers.get(trackingId);
 
             if (!marker) {
                 const el = document.createElement('div');
                 el.className = 'direction-arrow';
 
-                // Create and add the Mapbox Marker
                 marker = new mapboxgl.Marker({ element: el, anchor: 'center' }) 
                     .setLngLat(newLngLat)
                     .setPopup(new mapboxgl.Popup({ offset: 25 })) 
@@ -171,14 +170,10 @@
                 activeMarkers.set(trackingId, marker);
             }
 
-            // 2. Dynamic Updates (Color and Rotation)
             const markerElement = marker.getElement();
-            
             markerElement.style.borderBottomColor = arrowColor;
             markerElement.style.transform = `rotate(${heading}deg)`;
 
-
-            // 3. Update position and popup content
             const speedKPH = speed * 3.6;
 
             marker.setLngLat(newLngLat)
@@ -188,7 +183,6 @@
                     <p>Speed: ${speedKPH.toFixed(1)} km/h<br>Heading: ${heading.toFixed(0)}&deg;</p>
                   `);
             
-            // 4. Pan the map (focusing logic)
             if (isTracking && trackingId === currentTrackingId) {
                  map.flyTo({ center: newLngLat, speed: 0.5 });
             } else if (!isTracking) {
@@ -259,7 +253,7 @@
         });
 
         map.on('load', async () => {
-             // 1. Fetch ALL initial vehicle locations to populate the map
+             // 1. Fetch ALL initial vehicle locations (public viewer uses this)
              const { data, error } = await supabaseClient
                 .from('vehicle_location')
                 .select('*');
@@ -275,20 +269,72 @@
         // --- TRACKING FUNCTIONS (SENDER) ---
 
         function simpleSnap(rawLat, rawLon, accuracy) {
+            // Placeholder for future Map Matching API or local snapping logic
             return { lat: rawLat, lon: rawLon }; 
         }
 
         /**
-         * Handles successful geolocation position updates and sends to Supabase.
+         * Handles successful geolocation position updates, sends to Supabase, 
+         * and implements local trip tracking logic.
          */
         async function success(position) {
             const rawLat = position.coords.latitude;
             const rawLon = position.coords.longitude;
-            const acc = position.coords.accuracy;
-            const rawSpeed = position.coords.speed || 0;    // m/s
-            const rawHeading = position.coords.heading || 0; // degrees
+            const rawSpeed = position.coords.speed || 0;
+            const rawHeading = position.coords.heading || 0;
+            const timestamp = position.timestamp;
 
-            const snappedLocation = simpleSnap(rawLat, rawLon, acc);
+            const snappedLocation = simpleSnap(rawLat, rawLon, position.coords.accuracy);
+            
+            // --- 🧭 LOCAL TRIP LOGIC (Saves Start/End points to Console) ---
+            
+            const isMoving = rawSpeed > SPEED_THRESHOLDS.SLOW;
+
+            if (isMoving) {
+                // A. Vehicle is MOVING (Clear stop state)
+                if (currentTrip.stopTimer) {
+                    clearTimeout(currentTrip.stopTimer);
+                    currentTrip.stopTimer = null;
+                }
+
+                if (!currentTrip.isTrackingTrip) {
+                    // B. CONFIRM TRIP START
+                    currentTrip.isTrackingTrip = true;
+                    currentTrip.startPoint = { lat: rawLat, lon: rawLon, timestamp: timestamp };
+                    console.log(`TRIP START: ${new Date(timestamp).toLocaleTimeString()} at (${rawLat.toFixed(4)}, ${rawLon.toFixed(4)})`);
+                }
+
+            } else {
+                // C. Vehicle is STOPPED (Start or continue stop timer)
+                currentTrip.lastStop = { lat: rawLat, lon: rawLon, timestamp: timestamp };
+                
+                if (currentTrip.isTrackingTrip && !currentTrip.stopTimer) {
+                    console.log(`Starting trip end confirmation timer...`);
+                    
+                    currentTrip.stopTimer = setTimeout(() => {
+                        // D. CONFIRM TRIP END
+                        const endPoint = currentTrip.lastStop;
+                        
+                        console.log('--- TRIP COMPLETED ---');
+                        console.log(`Start Point (Lat/Lon): ${currentTrip.startPoint.lat.toFixed(4)}, ${currentTrip.startPoint.lon.toFixed(4)}`);
+                        console.log(`End Point (Lat/Lon): ${endPoint.lat.toFixed(4)}, ${endPoint.lon.toFixed(4)}`);
+                        const durationMinutes = (endPoint.timestamp - currentTrip.startPoint.timestamp) / 60000;
+                        console.log(`Duration: ${durationMinutes.toFixed(1)} minutes`);
+                        console.log('------------------------');
+
+                        // Reset trip state
+                        currentTrip.isTrackingTrip = false;
+                        currentTrip.startPoint = null;
+                        currentTrip.lastStop = null;
+                        currentTrip.stopTimer = null;
+                        
+                        // Update status after confirmed trip end
+                        statusDiv.textContent = 'Trip Completed. Ready for next trip.';
+                    }, MIN_STOP_TIME_MS); 
+                }
+            }
+            
+            // --- 🌐 SUPABASE UPDATE (Runs every 30s) ---
 
             const { error: updateError } = await supabaseClient
                 .from('vehicle_location')
@@ -296,15 +342,18 @@
                     latitude: snappedLocation.lat, 
                     longitude: snappedLocation.lon,
                     vehicle_type: currentVehicleType,
-                    speed: rawSpeed,                  // Send speed
-                    heading: rawHeading               // Send heading
+                    speed: rawSpeed,                  
+                    heading: rawHeading               
                 })
                 .eq('tracking_id', currentTrackingId); 
 
             if (updateError) {
                  console.error('Supabase update error:', updateError);
-                 statusDiv.textContent = 'ERROR: Update failed (Check RLS & login status).'; 
+                 statusDiv.textContent = 'ERROR: Update failed.'; 
                  statusDiv.style.color = '#dc3545';
+            } else if (!isMoving) {
+                 statusDiv.textContent = `Stopped. Waiting to confirm trip end...`;
+                 statusDiv.style.color = getSpeedColor(rawSpeed);
             } else {
                  const speedKPH = rawSpeed * 3.6;
                  statusDiv.textContent = `Sharing location. Speed: ${speedKPH.toFixed(1)} km/h.`;
@@ -335,13 +384,12 @@
                 return;
             }
             
-            // Options request high accuracy, speed, and heading data
             const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
             
-            // Immediately call success once to get the first reading
+            // Initial position update
             navigator.geolocation.getCurrentPosition(success, error, options);
 
-            // Set up the interval to get the position every 30 seconds
+            // Set up the 30-second interval for subsequent updates
             intervalID = setInterval(() => {
                 navigator.geolocation.getCurrentPosition(success, error, options);
             }, PING_RATE_MS); 
@@ -361,6 +409,14 @@
                 clearInterval(intervalID);
                 intervalID = null;
             }
+            // Clear any pending trip end timer when stopping sharing
+            if (currentTrip.stopTimer) {
+                clearTimeout(currentTrip.stopTimer);
+                currentTrip.stopTimer = null;
+                console.log("Trip end confirmation timer cleared.");
+            }
+            currentTrip.isTrackingTrip = false; // Also reset trip state on stop
+
             isTracking = false;
             statusDiv.textContent = `Viewing live updates. Ready to share.`;
             statusDiv.style.color = '#007bff'; 
@@ -397,5 +453,3 @@
     </script>
 </body>
 </html>
-
-
