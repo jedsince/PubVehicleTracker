@@ -172,46 +172,11 @@
         const statusDiv = document.getElementById('status');
         const authContainer = document.getElementById('auth-container');
         const loginButton = document.getElementById('loginButton');
-        const emailInput = document.getElementById('email'); // Re-added input elements
-        const passwordInput = document.getElementById('password'); // Re-added input elements
+        const emailInput = document.getElementById('email'); 
+        const passwordInput = document.getElementById('password'); 
 
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         
-        // --- MAP INITIALIZATION ---
-        const map = new mapboxgl.Map({
-            container: 'map',
-            style: 'mapbox://styles/mapbox/streets-v12',
-            center: DEFAULT_CENTER,
-            zoom: 12
-        });
-        
-        map.on('click', handleMapClick);
-
-        map.on('load', async () => {
-             // 1. Setup Route Display Layers
-             map.addSource(TRIP_ROUTE_SOURCE_ID, {
-                type: 'geojson',
-                data: {
-                    type: 'FeatureCollection',
-                    features: []
-                }
-             });
-             map.addLayer({
-                id: TRIP_ROUTE_LAYER_ID,
-                type: 'line',
-                source: TRIP_ROUTE_SOURCE_ID,
-                layout: { 'line-join': 'round', 'line-cap': 'round' },
-                paint: { 'line-color': '#0099ff', 'line-width': 6, 'line-opacity': 0.7 }
-             });
-             
-             // 2. Fetch all data and start real-time updates
-             const { data: vehicleData } = await supabaseClient.from('vehicle_location').select('*');
-             if (vehicleData) vehicleData.forEach(updateMarker);
-             
-             await fetchAndDisplayAllTerminals();
-             subscribeToLocationUpdates();
-        });
-
         // --- MARKER & UTILITIES ---
             
         function getSpeedColor(speed) {
@@ -310,12 +275,8 @@
 
         // --- MAPBOX ROUTE DRAWING LOGIC ---
 
-        /**
-         * Fetches and draws the road path between two terminal points.
-         * Consumes 1 Mapbox Directions API request.
-         */
         async function fetchAndDisplayRoute(startTerminal, endTerminal) {
-            clearDisplayedRoute(); // Clear any previous route
+            clearDisplayedRoute(); 
 
             const startCoords = `${startTerminal.longitude},${startTerminal.latitude}`;
             const endCoords = `${endTerminal.longitude},${endTerminal.latitude}`;
@@ -341,9 +302,6 @@
             }
         }
 
-        /**
-         * Clears the displayed predefined route line from the map.
-         */
         function clearDisplayedRoute() {
             if (map.getSource(TRIP_ROUTE_SOURCE_ID)) {
                 map.getSource(TRIP_ROUTE_SOURCE_ID).setData({ type: 'FeatureCollection', features: [] });
@@ -423,8 +381,7 @@
             togglePinningMode();
         }
 
-        // --- AUTH & TRACKING ---
-
+        // --- AUTHENTICATION & LOGIN ---
         async function initializeSharerSession(user) {
             const { data, error } = await supabaseClient
                 .from('vehicle_location')
@@ -451,7 +408,7 @@
             toggleButton.disabled = false;
         }
         
-        async function handleLogin() { // <-- MOVED handleLogin here
+        async function handleLogin() { 
             const email = emailInput.value;
             const password = passwordInput.value;
             statusDiv.textContent = 'Attempting login...';
@@ -468,7 +425,75 @@
                 }
             }
         }
+        
+        // --- TRACKING VIEWER (RECEIVER) ---
 
+        function subscribeToLocationUpdates() { // <-- MOVED UP
+            supabaseClient.channel('all_vehicles') 
+                .on(
+                    'postgres_changes',
+                    { event: 'UPDATE', schema: 'public', table: 'vehicle_location' }, 
+                    (payload) => {
+                        updateMarker(payload.new);
+                    }
+                )
+                .subscribe();
+            
+            // Subscribe to terminal changes 
+            supabaseClient.channel('all_terminals')
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table: 'terminals' }, 
+                    (payload) => {
+                        fetchAndDisplayAllTerminals();
+                    }
+                )
+                .subscribe();
+
+        }
+
+        // --- MAP INITIALIZATION ---
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v12',
+            center: DEFAULT_CENTER,
+            zoom: 12
+        });
+        
+        map.on('click', handleMapClick);
+
+        map.on('load', async () => {
+             // 1. Setup Route Display Layers
+             map.addSource(TRIP_ROUTE_SOURCE_ID, {
+                type: 'geojson',
+                data: {
+                    type: 'FeatureCollection',
+                    features: []
+                }
+             });
+             map.addLayer({
+                id: TRIP_ROUTE_LAYER_ID,
+                type: 'line',
+                source: TRIP_ROUTE_SOURCE_ID,
+                layout: { 'line-join': 'round', 'line-cap': 'round' },
+                paint: { 'line-color': '#0099ff', 'line-width': 6, 'line-opacity': 0.7 }
+             });
+             
+             // 2. Fetch all data and start real-time updates
+             const { data: vehicleData } = await supabaseClient.from('vehicle_location').select('*');
+             if (vehicleData) vehicleData.forEach(updateMarker);
+             
+             await fetchAndDisplayAllTerminals();
+             subscribeToLocationUpdates(); // <--- Now defined
+        });
+
+
+        // --- TRACKING SENDER FUNCTIONS ---
+        
+        function simpleSnap(rawLat, rawLon, accuracy) { // <-- MOVED UP
+            // Simple function, currently just returns raw coords
+            return { lat: rawLat, lon: rawLon }; 
+        }
 
         async function writeTerminalToSupabase(name, lat, lon, routeId) {
             statusDiv.textContent = `Attempting to save ${name} (Route ${routeId || 'N/A'})...`;
@@ -515,7 +540,7 @@
             const rawSpeed = position.coords.speed || 0;
             const rawHeading = position.coords.heading || 0;
             const timestamp = position.timestamp;
-            const snappedLocation = simpleSnap(rawLat, rawLon, position.coords.accuracy);
+            const snappedLocation = simpleSnap(rawLat, rawLon, position.coords.accuracy); // <--- Now defined
             const isMoving = rawSpeed > SPEED_THRESHOLDS.SLOW;
 
             if (isMoving) {
@@ -540,8 +565,6 @@
                         currentTrip.identifiedStartTerminal = closestStartTerminal;
                         console.log(`TRIP START: ${closestStartTerminal.name}. Route ID: ${closestStartTerminal.route_id}`);
                         
-                        // --- NEW LOGIC: Infer End Terminal and Draw Route ---
-                        // Find the other terminal on the same route (assuming a simple A to B route for now)
                         const endTerminal = allTerminals.find(t => 
                             t.route_id === closestStartTerminal.route_id && t.id !== closestStartTerminal.id
                         );
@@ -578,8 +601,6 @@
                         });
 
                         currentTrip.identifiedEndTerminal = closestEndTerminal;
-
-                        // --- NEW LOGIC: Clear Route ---
                         clearDisplayedRoute();
                         
                         let endStatusText = 'Trip Completed.';
@@ -587,7 +608,6 @@
                             endStatusText = `Trip Completed at ${currentTrip.identifiedEndTerminal.name}.`;
                         }
                         
-                        // Reset trip state
                         currentTrip.isTrackingTrip = false;
                         currentTrip.startPoint = null;
                         currentTrip.lastStop = null;
@@ -600,7 +620,6 @@
                 }
             }
             
-            // --- 🌐 SUPABASE UPDATE ---
             const { error: updateError } = await supabaseClient
                 .from('vehicle_location')
                 .update({ 
@@ -670,7 +689,6 @@
                 clearTimeout(currentTrip.stopTimer);
                 currentTrip.stopTimer = null;
             }
-            // Clear route and reset all trip state variables on manual stop
             clearDisplayedRoute();
             currentTrip.isTrackingTrip = false;
             currentTrip.startPoint = null;
@@ -688,8 +706,7 @@
         }
 
 
-        // --- EVENT LISTENERS ---
-        // Moved loginButton.onclick here to ensure handleLogin is defined
+        // --- EVENT LISTENERS (Run on script load) ---
         document.getElementById('loginButton').onclick = handleLogin; 
         
         document.getElementById('toggleButton').onclick = () => {
@@ -699,6 +716,15 @@
                 startTracking();
             }
         };
+
+        supabaseClient.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+                initializeSharerSession(session.user);
+            } else {
+                toggleButton.disabled = true;
+                statusDiv.textContent = `Please log in to share location.`;
+            }
+        });
 
         // Terminal Menu Listeners
         document.getElementById('toggleTerminalMenuBtn').onclick = () => {
@@ -712,4 +738,3 @@
     </script>
 </body>
 </html>
-
