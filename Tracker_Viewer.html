@@ -387,23 +387,33 @@
             // Only draw a single route for the current viewer (the latest one updated)
             clearDisplayedRoute(); 
 
+            // 🛑 CHANGE: Removed .single() and will handle the first item in the array
             const { data, error } = await supabaseClient
                 .from('active_routes')
                 .select('*')
                 .eq('tracking_id', trackingId)
-                .eq('is_active', true)
-                .single();
+                .eq('is_active', true); // Removed .single() here
 
-            if (error || !data) {
-                return; 
+            if (error) {
+                console.error('Error fetching viewer route:', error.message);
+                return;
+            }
+            
+            // 🛑 NEW: Check if data is an array and if it contains any items
+            if (!data || data.length === 0) {
+                return; // No active route found for this tracking ID
             }
 
-            const startTerminal = { latitude: data.start_lat, longitude: data.start_lon, name: data.start_name };
-            const endTerminal = { latitude: data.end_lat, longitude: data.end_lon, name: data.end_name };
+            // If there are multiple active routes (though unlikely for a single vehicle),
+            // we'll just take the first one.
+            const routeData = data[0]; 
+
+            const startTerminal = { latitude: routeData.start_lat, longitude: routeData.start_lon, name: routeData.start_name };
+            const endTerminal = { latitude: routeData.end_lat, longitude: routeData.end_lon, name: routeData.end_name };
             
             fetchAndDisplayRoute(startTerminal, endTerminal);
             
-            console.log(`Viewer: Displaying active trip for ${trackingId}: ${data.start_name} to ${data.end_name}`);
+            console.log(`Viewer: Displaying active trip for ${trackingId}: ${routeData.start_name} to ${routeData.end_name}`);
         }
 
 
@@ -1027,3 +1037,4 @@
     </script>
 </body>
 </html>
+
