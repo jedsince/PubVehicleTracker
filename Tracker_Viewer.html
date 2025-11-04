@@ -106,6 +106,25 @@
     </div>
 
     <div id="terminal-submenu" class="controls" style="display: none; flex-direction: column; align-items: stretch; gap: 10px;">
+        
+        <h4>Manual Trip Control</h4>
+        <div style="display: flex; flex-direction: column; gap: 5px; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
+            <label for="startTerminalSelect">Start Terminal:</label>
+            <select id="startTerminalSelect">
+                <option value="">-- Auto-Detect (Default) --</option>
+            </select>
+            
+            <label for="endTerminalSelect">End Terminal:</label>
+            <select id="endTerminalSelect" disabled>
+                <option value="">-- Select Route & Destination --</option>
+            </select>
+
+            <button id="drawManualRouteButton" class="share-btn" style="background-color: #007bff;">Draw Route Manually</button>
+            <button id="clearManualRouteButton" class="stop-btn">Clear Route</button>
+        </div>
+
+        <hr style="width: 100%;">
+
         <h4>Add New Terminal</h4>
         <div style="display: flex; gap: 10px; flex-wrap: wrap;">
             <input type="text" id="terminalNameInput" placeholder="Name (e.g., Cubao Stop)">
@@ -123,6 +142,7 @@
 
     <script>
         // --- CONFIGURATION ---
+        // NOTE: Replace these with your actual Supabase and Mapbox keys!
         const SUPABASE_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
         mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
@@ -130,9 +150,9 @@
         const DEFAULT_CENTER = [121.0284546, 14.928021]; 
         
         const SPEED_THRESHOLDS = {
-            FAST: 8.33,
-            MODERATE: 2.78,
-            SLOW: 0.5
+            FAST: 8.33, 
+            MODERATE: 2.78, 
+            SLOW: 0.5 
         };
         
         const PING_RATE_MS = 30000; 
@@ -175,9 +195,15 @@
         const emailInput = document.getElementById('email'); 
         const passwordInput = document.getElementById('password'); 
 
+        // New Manual Select Elements
+        const startTerminalSelect = document.getElementById('startTerminalSelect');
+        const endTerminalSelect = document.getElementById('endTerminalSelect');
+        const drawManualRouteButton = document.getElementById('drawManualRouteButton');
+        const clearManualRouteButton = document.getElementById('clearManualRouteButton');
+
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         
-        // --- MARKER & UTILITIES ---
+        // --- UTILITY FUNCTIONS ---
             
         function getSpeedColor(speed) {
             if (speed >= SPEED_THRESHOLDS.FAST) return '#28a745'; 
@@ -186,6 +212,35 @@
             return '#dc3545'; 
         }
 
+        function getHaversineDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3;
+            const φ1 = lat1 * Math.PI/180;
+            const φ2 = lat2 * Math.PI/180;
+            const Δφ = (lat2-lat1) * Math.PI/180;
+            const Δλ = (lon2-lon1) * Math.PI/180;
+
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+            return R * c;
+        }
+        
+        /**
+         * Simple GPS snapping/filtering function (Prevents jitter)
+         */
+        function simpleSnap(rawLat, rawLon, accuracy) {
+            const precision = accuracy > 10 ? 4 : 5; 
+            return { 
+                lat: parseFloat(rawLat.toFixed(precision)), 
+                lon: parseFloat(rawLon.toFixed(precision)) 
+            }; 
+        }
+
+
+        // --- MAPBOX & TERMINAL DISPLAY ---
+        
         function updateMarker(data) {
             const trackingId = data.tracking_id;
             if (!data.latitude || !data.longitude || !trackingId) return; 
@@ -230,21 +285,6 @@
             }
         }
 
-        function getHaversineDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371e3;
-            const φ1 = lat1 * Math.PI/180;
-            const φ2 = lat2 * Math.PI/180;
-            const Δφ = (lat2-lat1) * Math.PI/180;
-            const Δλ = (lon2-lon1) * Math.PI/180;
-
-            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                      Math.cos(φ1) * Math.cos(φ2) *
-                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-            return R * c;
-        }
-
         async function fetchAndDisplayAllTerminals() {
             const { data, error } = await supabaseClient
                 .from('terminals')
@@ -255,11 +295,23 @@
                 return;
             }
 
+            // --- Populate Dropdowns ---
+            startTerminalSelect.innerHTML = '<option value="">-- Auto-Detect (Default) --</option>';
+            endTerminalSelect.innerHTML = '<option value="">-- Select Route & Destination --</option>';
+            endTerminalSelect.disabled = true;
+
             activeTerminalMarkers.forEach(marker => marker.remove());
             activeTerminalMarkers.clear();
 
             allTerminals = data;
             allTerminals.forEach(terminal => {
+                // Add options to the Start Terminal Select
+                const option = document.createElement('option');
+                option.value = terminal.id;
+                option.textContent = `${terminal.name} (Route: ${terminal.route_id || 'N/A'})`;
+                startTerminalSelect.appendChild(option);
+
+                // Draw map marker
                 const el = document.createElement('div');
                 el.className = 'terminal-marker';
                 el.textContent = terminal.name[0].toUpperCase();
@@ -270,16 +322,15 @@
                     .addTo(map);
                 activeTerminalMarkers.set(terminal.id, marker);
             });
-            console.log(`Loaded ${allTerminals.length} terminals.`);
+            console.log(`Loaded ${allTerminals.length} terminals and populated dropdowns.`);
         }
-
-        // --- MAPBOX ROUTE DRAWING LOGIC ---
 
         async function fetchAndDisplayRoute(startTerminal, endTerminal) {
             clearDisplayedRoute(); 
 
             const startCoords = `${startTerminal.longitude},${startTerminal.latitude}`;
             const endCoords = `${endTerminal.longitude},${endTerminal.latitude}`;
+            
             const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${startCoords};${endCoords}?geometries=geojson&access_token=${mapboxgl.accessToken}`;
 
             try {
@@ -307,8 +358,68 @@
                 map.getSource(TRIP_ROUTE_SOURCE_ID).setData({ type: 'FeatureCollection', features: [] });
             }
         }
+
+        // --- REAL-TIME SUBSCRIPTION ---
+        function subscribeToLocationUpdates() { 
+            supabaseClient.channel('all_vehicles') 
+                .on(
+                    'postgres_changes',
+                    { event: 'UPDATE', schema: 'public', table: 'vehicle_location' }, 
+                    (payload) => {
+                        updateMarker(payload.new);
+                    }
+                )
+                .subscribe();
+            
+            supabaseClient.channel('all_terminals')
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table: 'terminals' }, 
+                    (payload) => {
+                        fetchAndDisplayAllTerminals();
+                    }
+                )
+                .subscribe();
+
+        }
+
+        // --- MAP INITIALIZATION ---
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v12',
+            center: DEFAULT_CENTER,
+            zoom: 12
+        });
         
-        // --- PIN DROP LOGIC ---
+        map.on('click', handleMapClick);
+
+        map.on('load', async () => {
+             // 1. Setup Route Display Layers
+             map.addSource(TRIP_ROUTE_SOURCE_ID, {
+                type: 'geojson',
+                data: {
+                    type: 'FeatureCollection',
+                    features: []
+                }
+             });
+             map.addLayer({
+                id: TRIP_ROUTE_LAYER_ID,
+                type: 'line',
+                source: TRIP_ROUTE_SOURCE_ID,
+                layout: { 'line-join': 'round', 'line-cap': 'round' },
+                paint: { 'line-color': '#0099ff', 'line-width': 6, 'line-opacity': 0.7 }
+             });
+             
+             // 2. Fetch all data and start real-time updates
+             const { data: vehicleData } = await supabaseClient.from('vehicle_location').select('*');
+             if (vehicleData) vehicleData.forEach(updateMarker);
+             
+             await fetchAndDisplayAllTerminals();
+             subscribeToLocationUpdates(); 
+        });
+
+
+        // --- PINNING AND TERMINAL MANAGEMENT ---
 
         function togglePinningMode() {
             isPinningMode = !isPinningMode;
@@ -381,7 +492,49 @@
             togglePinningMode();
         }
 
+        async function writeTerminalToSupabase(name, lat, lon, routeId) {
+            statusDiv.textContent = `Attempting to save ${name} (Route ${routeId || 'N/A'})...`;
+            
+            const { error } = await supabaseClient
+                .from('terminals')
+                .insert({
+                    name: name,
+                    latitude: lat,
+                    longitude: lon,
+                    route_id: routeId || null 
+                });
+
+            if (error) {
+                console.error('Terminal save error:', error);
+                statusDiv.textContent = `ERROR saving terminal: ${error.message}`;
+                statusDiv.style.color = '#dc3545';
+            } else {
+                statusDiv.textContent = `Successfully SAVED new terminal: ${name}!`;
+                document.getElementById('terminalNameInput').value = '';
+                document.getElementById('routeIdInput').value = ''; 
+                fetchAndDisplayAllTerminals();
+            }
+        }
+        
+        function captureAndSaveTerminal() {
+            const terminalName = document.getElementById('terminalNameInput').value;
+            const routeId = document.getElementById('routeIdInput').value.toUpperCase();
+            
+            if (!terminalName) { alert("Please enter a name!"); return; }
+            if (!navigator.geolocation) { alert('Geolocation not supported.'); return; }
+
+            const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
+
+            navigator.geolocation.getCurrentPosition(async (position) => {
+                await writeTerminalToSupabase(terminalName, position.coords.latitude, position.coords.longitude, routeId);
+            }, (err) => {
+                alert(`Could not get GPS location: ${err.message}`);
+            }, options);
+        }
+
+
         // --- AUTHENTICATION & LOGIN ---
+        
         async function initializeSharerSession(user) {
             const { data, error } = await supabaseClient
                 .from('vehicle_location')
@@ -426,113 +579,8 @@
             }
         }
         
-        // --- TRACKING VIEWER (RECEIVER) ---
 
-        function subscribeToLocationUpdates() { // <-- MOVED UP
-            supabaseClient.channel('all_vehicles') 
-                .on(
-                    'postgres_changes',
-                    { event: 'UPDATE', schema: 'public', table: 'vehicle_location' }, 
-                    (payload) => {
-                        updateMarker(payload.new);
-                    }
-                )
-                .subscribe();
-            
-            // Subscribe to terminal changes 
-            supabaseClient.channel('all_terminals')
-                .on(
-                    'postgres_changes',
-                    { event: '*', schema: 'public', table: 'terminals' }, 
-                    (payload) => {
-                        fetchAndDisplayAllTerminals();
-                    }
-                )
-                .subscribe();
-
-        }
-
-        // --- MAP INITIALIZATION ---
-        const map = new mapboxgl.Map({
-            container: 'map',
-            style: 'mapbox://styles/mapbox/streets-v12',
-            center: DEFAULT_CENTER,
-            zoom: 12
-        });
-        
-        map.on('click', handleMapClick);
-
-        map.on('load', async () => {
-             // 1. Setup Route Display Layers
-             map.addSource(TRIP_ROUTE_SOURCE_ID, {
-                type: 'geojson',
-                data: {
-                    type: 'FeatureCollection',
-                    features: []
-                }
-             });
-             map.addLayer({
-                id: TRIP_ROUTE_LAYER_ID,
-                type: 'line',
-                source: TRIP_ROUTE_SOURCE_ID,
-                layout: { 'line-join': 'round', 'line-cap': 'round' },
-                paint: { 'line-color': '#0099ff', 'line-width': 6, 'line-opacity': 0.7 }
-             });
-             
-             // 2. Fetch all data and start real-time updates
-             const { data: vehicleData } = await supabaseClient.from('vehicle_location').select('*');
-             if (vehicleData) vehicleData.forEach(updateMarker);
-             
-             await fetchAndDisplayAllTerminals();
-             subscribeToLocationUpdates(); // <--- Now defined
-        });
-
-
-        // --- TRACKING SENDER FUNCTIONS ---
-        
-        function simpleSnap(rawLat, rawLon, accuracy) { // <-- MOVED UP
-            // Simple function, currently just returns raw coords
-            return { lat: rawLat, lon: rawLon }; 
-        }
-
-        async function writeTerminalToSupabase(name, lat, lon, routeId) {
-            statusDiv.textContent = `Attempting to save ${name} (Route ${routeId || 'N/A'})...`;
-            
-            const { error } = await supabaseClient
-                .from('terminals')
-                .insert({
-                    name: name,
-                    latitude: lat,
-                    longitude: lon,
-                    route_id: routeId || null 
-                });
-
-            if (error) {
-                console.error('Terminal save error:', error);
-                statusDiv.textContent = `ERROR saving terminal: ${error.message}`;
-                statusDiv.style.color = '#dc3545';
-            } else {
-                statusDiv.textContent = `Successfully SAVED new terminal: ${name}!`;
-                document.getElementById('terminalNameInput').value = '';
-                document.getElementById('routeIdInput').value = ''; 
-            }
-        }
-        
-        function captureAndSaveTerminal() {
-            const terminalName = document.getElementById('terminalNameInput').value;
-            const routeId = document.getElementById('routeIdInput').value.toUpperCase();
-            
-            if (!terminalName) { alert("Please enter a name!"); return; }
-            if (!navigator.geolocation) { alert('Geolocation not supported.'); return; }
-
-            const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
-
-            navigator.geolocation.getCurrentPosition(async (position) => {
-                await writeTerminalToSupabase(terminalName, position.coords.latitude, position.coords.longitude, routeId);
-            }, (err) => {
-                alert(`Could not get GPS location: ${err.message}`);
-            }, options);
-        }
+        // --- TRACKING SENDER LOGIC ---
 
         async function success(position) {
             const rawLat = position.coords.latitude;
@@ -540,9 +588,22 @@
             const rawSpeed = position.coords.speed || 0;
             const rawHeading = position.coords.heading || 0;
             const timestamp = position.timestamp;
-            const snappedLocation = simpleSnap(rawLat, rawLon, position.coords.accuracy); // <--- Now defined
+            const snappedLocation = simpleSnap(rawLat, rawLon, position.coords.accuracy); 
             const isMoving = rawSpeed > SPEED_THRESHOLDS.SLOW;
 
+            // 1. Check for manual route drawing override
+            const manualStartId = startTerminalSelect.value;
+            const manualEndId = endTerminalSelect.value;
+            
+            let manualStartTerminal = null;
+            let manualEndTerminal = null;
+
+            if (manualStartId && manualEndId) {
+                manualStartTerminal = allTerminals.find(t => t.id == manualStartId);
+                manualEndTerminal = allTerminals.find(t => t.id == manualEndId);
+            }
+
+            // --- TRIP LOGIC START ---
             if (isMoving) {
                 if (currentTrip.stopTimer) { clearTimeout(currentTrip.stopTimer); currentTrip.stopTimer = null; }
 
@@ -550,40 +611,57 @@
                     currentTrip.isTrackingTrip = true;
                     currentTrip.startPoint = { lat: rawLat, lon: rawLon, timestamp: timestamp };
                     
-                    let closestStartTerminal = null;
-                    let minStartDistance = Infinity;
+                    let startTerminalToUse = null;
+                    let endTerminalToUse = null;
 
-                    allTerminals.forEach(terminal => {
-                        const dist = getHaversineDistance(rawLat, rawLon, terminal.latitude, terminal.longitude);
-                        if (dist < minStartDistance) {
-                            minStartDistance = dist;
-                            closestStartTerminal = terminal;
-                        }
-                    });
-
-                    if (closestStartTerminal && minStartDistance < PROXIMITY_THRESHOLD_M && closestStartTerminal.route_id) {
-                        currentTrip.identifiedStartTerminal = closestStartTerminal;
-                        console.log(`TRIP START: ${closestStartTerminal.name}. Route ID: ${closestStartTerminal.route_id}`);
-                        
-                        const endTerminal = allTerminals.find(t => 
-                            t.route_id === closestStartTerminal.route_id && t.id !== closestStartTerminal.id
-                        );
-
-                        if (endTerminal) {
-                            console.log(`Inferred Destination: ${endTerminal.name}`);
-                            fetchAndDisplayRoute(closestStartTerminal, endTerminal);
-                            statusDiv.textContent = `Trip Started: ${closestStartTerminal.name} -> ${endTerminal.name}!`;
-                        } else {
-                            statusDiv.textContent = `Trip Started from ${closestStartTerminal.name} (Route not fully defined).`;
-                        }
+                    // **NEW LOGIC: Prioritize Manual Selection**
+                    if (manualStartTerminal && manualEndTerminal) {
+                        startTerminalToUse = manualStartTerminal;
+                        endTerminalToUse = manualEndTerminal;
+                        console.log(`TRIP START (Manual): ${startTerminalToUse.name}.`);
+                        statusDiv.textContent = `Trip Started (Manual): ${startTerminalToUse.name} -> ${endTerminalToUse.name}!`;
                         
                     } else {
-                        currentTrip.identifiedStartTerminal = null;
-                        statusDiv.textContent = `Trip Started! Sharing location. Speed: ${(rawSpeed * 3.6).toFixed(1)} km/h.`;
+                        // **FALLBACK: Proximity Detection**
+                        let closestStartTerminal = null;
+                        let minStartDistance = Infinity;
+
+                        allTerminals.forEach(terminal => {
+                            const dist = getHaversineDistance(rawLat, rawLon, terminal.latitude, terminal.longitude);
+                            if (dist < minStartDistance) {
+                                minStartDistance = dist;
+                                closestStartTerminal = terminal;
+                            }
+                        });
+
+                        if (closestStartTerminal && minStartDistance < PROXIMITY_THRESHOLD_M && closestStartTerminal.route_id) {
+                            startTerminalToUse = closestStartTerminal;
+                            console.log(`TRIP START (Auto): ${startTerminalToUse.name}. Route ID: ${startTerminalToUse.route_id}`);
+                            
+                            // Auto-infer end terminal based on route_id
+                            endTerminalToUse = allTerminals.find(t => 
+                                t.route_id === startTerminalToUse.route_id && t.id !== startTerminalToUse.id
+                            );
+                            
+                            statusDiv.textContent = endTerminalToUse 
+                                ? `Trip Started (Auto): ${startTerminalToUse.name} -> ${endTerminalToUse.name}!`
+                                : `Trip Started (Auto) from ${startTerminalToUse.name} (Route not fully defined).`;
+                                
+                        } else {
+                            currentTrip.identifiedStartTerminal = null; 
+                            statusDiv.textContent = `Trip Started! Sharing location. Speed: ${(rawSpeed * 3.6).toFixed(1)} km/h.`;
+                        }
+                    }
+
+                    // --- ROUTE DRAWING (Applies to both Manual and Auto) ---
+                    if (startTerminalToUse && endTerminalToUse) {
+                        currentTrip.identifiedStartTerminal = startTerminalToUse;
+                        currentTrip.identifiedEndTerminal = endTerminalToUse; 
+                        fetchAndDisplayRoute(startTerminalToUse, endTerminalToUse);
                     }
                 }
 
-            } else {
+            } else { // STOPPED OR SLOW
                 currentTrip.lastStop = { lat: rawLat, lon: rawLon, timestamp: timestamp };
                 
                 if (currentTrip.isTrackingTrip && !currentTrip.stopTimer) {
@@ -608,6 +686,7 @@
                             endStatusText = `Trip Completed at ${currentTrip.identifiedEndTerminal.name}.`;
                         }
                         
+                        // Reset trip state
                         currentTrip.isTrackingTrip = false;
                         currentTrip.startPoint = null;
                         currentTrip.lastStop = null;
@@ -620,6 +699,7 @@
                 }
             }
             
+            // --- SUPABASE UPDATE ---
             const { error: updateError } = await supabaseClient
                 .from('vehicle_location')
                 .update({ 
@@ -706,7 +786,7 @@
         }
 
 
-        // --- EVENT LISTENERS (Run on script load) ---
+        // --- EVENT LISTENERS ---
         document.getElementById('loginButton').onclick = handleLogin; 
         
         document.getElementById('toggleButton').onclick = () => {
@@ -717,6 +797,7 @@
             }
         };
 
+        // Check for existing session on page load
         supabaseClient.auth.getSession().then(({ data: { session } }) => {
             if (session) {
                 initializeSharerSession(session.user);
@@ -735,6 +816,66 @@
         document.getElementById('captureGPSButton').onclick = captureAndSaveTerminal;
         document.getElementById('dropPinButton').onclick = togglePinningMode;
         document.getElementById('savePinButton').onclick = savePinnedTerminal;
+
+
+        // --- MANUAL TRIP CONTROL LISTENERS ---
+        startTerminalSelect.onchange = function() {
+            const startId = this.value;
+            endTerminalSelect.innerHTML = '<option value="">-- Select Destination --</option>';
+            endTerminalSelect.disabled = true;
+
+            if (startId) {
+                const startTerminal = allTerminals.find(t => t.id == startId);
+                if (startTerminal && startTerminal.route_id) {
+                    
+                    const destinations = allTerminals.filter(t => 
+                        t.route_id === startTerminal.route_id && t.id !== startId
+                    );
+
+                    destinations.forEach(terminal => {
+                        const option = document.createElement('option');
+                        option.value = terminal.id;
+                        option.textContent = terminal.name;
+                        endTerminalSelect.appendChild(option);
+                    });
+                    
+                    endTerminalSelect.disabled = destinations.length === 0;
+                    if (destinations.length > 0) {
+                        statusDiv.textContent = `Route ${startTerminal.route_id} selected. Choose destination.`;
+                    } else {
+                        statusDiv.textContent = `Route ${startTerminal.route_id} has no other terminals defined.`;
+                    }
+
+                } else {
+                    statusDiv.textContent = 'Selected terminal has no defined route.';
+                }
+            } else {
+                statusDiv.textContent = 'Auto-detect is active.';
+            }
+        };
+
+        drawManualRouteButton.onclick = function() {
+            const startId = startTerminalSelect.value;
+            const endId = endTerminalSelect.value;
+
+            if (!startId || !endId) {
+                alert("Please select both a Start and End terminal.");
+                return;
+            }
+
+            const startTerminal = allTerminals.find(t => t.id == startId);
+            const endTerminal = allTerminals.find(t => t.id == endId);
+
+            if (startTerminal && endTerminal) {
+                fetchAndDisplayRoute(startTerminal, endTerminal);
+                statusDiv.textContent = `MANUAL Route Drawn: ${startTerminal.name} to ${endTerminal.name}.`;
+            }
+        };
+
+        clearManualRouteButton.onclick = function() {
+            clearDisplayedRoute();
+            statusDiv.textContent = 'Route line cleared.';
+        };
     </script>
 </body>
 </html>
