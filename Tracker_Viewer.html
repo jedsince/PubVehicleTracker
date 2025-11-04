@@ -26,6 +26,8 @@
             display: flex;
             justify-content: space-around;
             align-items: center;
+            flex-wrap: wrap; /* Allow wrapping on smaller screens */
+            gap: 10px; /* Space between items */
         }
         #auth-container {
             padding: 20px; 
@@ -62,6 +64,22 @@
             border-radius: 2px;
             box-shadow: 0 0 5px rgba(0,0,0,0.5);
         }
+
+        /* Styling for Terminal Markers */
+        .terminal-marker {
+            background-color: #007bff; /* Blue for terminals */
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-weight: bold;
+            font-size: 10px;
+        }
     </style>
 </head>
 <body>
@@ -85,12 +103,16 @@
         <div id="status" class="status-text">Checking login status...</div>
     </div>
 
+    <div id="terminal-controls" class="controls" style="display: none;">
+        <input type="text" id="terminalNameInput" placeholder="Name the new Terminal (e.g., Cubao Stop)">
+        <button id="captureTerminalButton" class="share-btn">📍 Capture Current Location as Terminal</button>
+    </div>
+
     <div id='map'></div>
 
     <script>
         // --- CONFIGURATION ---
         const SUPABASE_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
-        // CRITICAL FIX: The correct anon key is used here.
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
         mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
         
@@ -105,22 +127,27 @@
         
         const PING_RATE_MS = 30000; // 30 seconds for battery conservation
         const MIN_STOP_TIME_MS = 180000; // 3 minutes to confirm a terminal stop
+        const PROXIMITY_THRESHOLD_M = 100; // 100 meters to match start/end points to terminals
 
         // --- STATE & UTILITIES ---
         let intervalID = null; 
         let isTracking = false;
         
-        const activeMarkers = new Map(); 
+        const activeMarkers = new Map(); // For vehicles
+        const activeTerminalMarkers = new Map(); // For terminals
 
         let currentTrackingId = null; 
         let currentVehicleType = null;
+        let allTerminals = []; // To store all fetched terminals
 
         // --- TRIP STATE VARIABLES ---
         let currentTrip = {
             isTrackingTrip: false, 
             startPoint: null,      
             lastStop: null,        
-            stopTimer: null        
+            stopTimer: null,
+            identifiedStartTerminal: null, // New: Store the identified terminal
+            identifiedEndTerminal: null    // New: Store the identified terminal
         };
         
         const toggleButton = document.getElementById('toggleButton');
@@ -132,7 +159,32 @@
 
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         
-        // --- MARKER UTILITIES (Directional Arrow Logic) ---
+        // --- MAP INITIALIZATION ---
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v12',
+            center: DEFAULT_CENTER,
+            zoom: 12
+        });
+
+        map.on('load', async () => {
+             // 1. Fetch ALL initial vehicle locations
+             const { data, error } = await supabaseClient
+                .from('vehicle_location')
+                .select('*');
+
+             if (data) {
+                 data.forEach(updateMarker);
+             }
+             
+             // 2. Fetch and display all terminals
+             await fetchAndDisplayAllTerminals();
+
+             // 3. Start listening for real-time updates for all changes
+             subscribeToLocationUpdates();
+        });
+
+        // --- MARKER & MAP UTILITIES ---
             
         function getSpeedColor(speed) {
             if (speed >= SPEED_THRESHOLDS.FAST) {
@@ -190,13 +242,63 @@
             }
         }
 
+        /**
+         * Calculates the distance between two lat/lon points in meters using Haversine formula.
+         */
+        function getHaversineDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; // metres
+            const φ1 = lat1 * Math.PI/180; // φ, λ in radians
+            const φ2 = lat2 * Math.PI/180;
+            const Δφ = (lat2-lat1) * Math.PI/180;
+            const Δλ = (lon2-lon1) * Math.PI/180;
+
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+                      Math.cos(φ1) * Math.cos(φ2) *
+                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+            const d = R * c; // in metres
+            return d;
+        }
+
+        /**
+         * Fetches all terminals from Supabase and displays them on the map.
+         * Runs once on map load.
+         */
+        async function fetchAndDisplayAllTerminals() {
+            const { data, error } = await supabaseClient
+                .from('terminals')
+                .select('*');
+
+            if (error) {
+                console.error('Error fetching terminals:', error.message);
+                return;
+            }
+
+            allTerminals = data; // Store globally
+            allTerminals.forEach(terminal => {
+                let marker = activeTerminalMarkers.get(terminal.id);
+                if (!marker) {
+                    const el = document.createElement('div');
+                    el.className = 'terminal-marker';
+                    el.textContent = terminal.name[0].toUpperCase(); // First letter of terminal name
+
+                    marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+                        .setLngLat([terminal.longitude, terminal.latitude])
+                        .setPopup(new mapboxgl.Popup({ offset: 25 }).setText(terminal.name))
+                        .addTo(map);
+                    activeTerminalMarkers.set(terminal.id, marker);
+                }
+            });
+            console.log(`Loaded ${allTerminals.length} terminals.`);
+        }
 
         // --- AUTHENTICATION & SESSION HANDLING ---
 
         async function initializeSharerSession(user) {
             const { data, error } = await supabaseClient
                 .from('vehicle_location')
-                .select('tracking_id, vehicle_type')
+                .select('tracking_id, vehicle_type') // Removed route_start/end as they'll be dynamic
                 .eq('sharer_id', user.id)
                 .single(); 
 
@@ -211,6 +313,9 @@
             currentVehicleType = data.vehicle_type;
 
             authContainer.style.display = 'none'; 
+            // NEW: Show terminal capture controls for logged-in sharer
+            document.getElementById('terminal-controls').style.display = 'flex'; 
+
             statusDiv.textContent = `Sharer logged in as ${currentTrackingId} (${currentVehicleType}). Ready to share.`;
             statusDiv.style.color = '#007bff'; 
             toggleButton.disabled = false;
@@ -243,34 +348,63 @@
             }
         });
 
-        // --- MAP INITIALIZATION ---
-
-        const map = new mapboxgl.Map({
-            container: 'map',
-            style: 'mapbox://styles/mapbox/streets-v12',
-            center: DEFAULT_CENTER,
-            zoom: 12
-        });
-
-        map.on('load', async () => {
-             // 1. Fetch ALL initial vehicle locations (public viewer uses this)
-             const { data, error } = await supabaseClient
-                .from('vehicle_location')
-                .select('*');
-
-             if (data) {
-                 data.forEach(updateMarker);
-             }
-             
-             // 2. Start listening for real-time updates for all changes
-             subscribeToLocationUpdates();
-        });
 
         // --- TRACKING FUNCTIONS (SENDER) ---
 
         function simpleSnap(rawLat, rawLon, accuracy) {
             // Placeholder for future Map Matching API or local snapping logic
             return { lat: rawLat, lon: rawLon }; 
+        }
+
+        /**
+         * Captures the user's current GPS position and writes it to the 'terminals' table.
+         * Only accessible when logged in as a sharer.
+         */
+        function captureAndSaveTerminal() {
+            const terminalName = document.getElementById('terminalNameInput').value;
+            if (!terminalName) {
+                alert("Please enter a name for the new terminal!");
+                return;
+            }
+
+            if (!navigator.geolocation) {
+                alert('Geolocation is not supported by your browser.');
+                return;
+            }
+
+            const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
+
+            navigator.geolocation.getCurrentPosition(async (position) => {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+
+                statusDiv.textContent = `Attempting to save ${terminalName} at (${lat.toFixed(4)}, ${lon.toFixed(4)})...`;
+                
+                const { error } = await supabaseClient
+                    .from('terminals')
+                    .insert({
+                        name: terminalName,
+                        latitude: lat,
+                        longitude: lon
+                    });
+
+                if (error) {
+                    console.error('Terminal save error:', error);
+                    statusDiv.textContent = `ERROR saving terminal: ${error.message}`;
+                    statusDiv.style.color = '#dc3545';
+                } else {
+                    statusDiv.textContent = `Successfully SAVED new terminal: ${terminalName}!`;
+                    statusDiv.style.color = '#28a745';
+                    document.getElementById('terminalNameInput').value = ''; // Clear input field
+                    // NEW: Re-fetch and display terminals to update map with new terminal
+                    await fetchAndDisplayAllTerminals(); 
+                }
+
+            }, (err) => {
+                alert(`Could not get GPS location: ${err.message}`);
+                statusDiv.textContent = `Failed to get GPS for terminal capture.`;
+                statusDiv.style.color = '#dc3545';
+            }, options);
         }
 
         /**
@@ -291,33 +425,76 @@
             const isMoving = rawSpeed > SPEED_THRESHOLDS.SLOW;
 
             if (isMoving) {
-                // A. Vehicle is MOVING (Clear stop state)
                 if (currentTrip.stopTimer) {
                     clearTimeout(currentTrip.stopTimer);
                     currentTrip.stopTimer = null;
                 }
 
                 if (!currentTrip.isTrackingTrip) {
-                    // B. CONFIRM TRIP START
                     currentTrip.isTrackingTrip = true;
                     currentTrip.startPoint = { lat: rawLat, lon: rawLon, timestamp: timestamp };
-                    console.log(`TRIP START: ${new Date(timestamp).toLocaleTimeString()} at (${rawLat.toFixed(4)}, ${rawLon.toFixed(4)})`);
+                    
+                    // NEW: Identify closest starting terminal
+                    let closestStartTerminal = null;
+                    let minStartDistance = Infinity;
+
+                    allTerminals.forEach(terminal => {
+                        const dist = getHaversineDistance(rawLat, rawLon, terminal.latitude, terminal.longitude);
+                        if (dist < minStartDistance) {
+                            minStartDistance = dist;
+                            closestStartTerminal = terminal;
+                        }
+                    });
+
+                    if (closestStartTerminal && minStartDistance < PROXIMITY_THRESHOLD_M) {
+                        currentTrip.identifiedStartTerminal = closestStartTerminal;
+                        console.log(`TRIP START: ${new Date(timestamp).toLocaleTimeString()} from identified Terminal: ${closestStartTerminal.name}`);
+                        statusDiv.textContent = `Trip Started from ${closestStartTerminal.name}!`;
+                    } else {
+                        currentTrip.identifiedStartTerminal = null; // No terminal identified
+                        console.log(`TRIP START: ${new Date(timestamp).toLocaleTimeString()} at (${rawLat.toFixed(4)}, ${rawLon.toFixed(4)}) (No nearby terminal identified)`);
+                        statusDiv.textContent = `Trip Started! Sharing location. Speed: ${(rawSpeed * 3.6).toFixed(1)} km/h.`;
+                    }
                 }
 
             } else {
-                // C. Vehicle is STOPPED (Start or continue stop timer)
                 currentTrip.lastStop = { lat: rawLat, lon: rawLon, timestamp: timestamp };
                 
                 if (currentTrip.isTrackingTrip && !currentTrip.stopTimer) {
                     console.log(`Starting trip end confirmation timer...`);
                     
                     currentTrip.stopTimer = setTimeout(() => {
-                        // D. CONFIRM TRIP END
                         const endPoint = currentTrip.lastStop;
                         
+                        // NEW: Identify closest ending terminal
+                        let closestEndTerminal = null;
+                        let minEndDistance = Infinity;
+
+                        allTerminals.forEach(terminal => {
+                            const dist = getHaversineDistance(endPoint.lat, endPoint.lon, terminal.latitude, terminal.longitude);
+                            if (dist < minEndDistance) {
+                                minEndDistance = dist;
+                                closestEndTerminal = terminal;
+                            }
+                        });
+
+                        currentTrip.identifiedEndTerminal = closestEndTerminal;
+
                         console.log('--- TRIP COMPLETED ---');
-                        console.log(`Start Point (Lat/Lon): ${currentTrip.startPoint.lat.toFixed(4)}, ${currentTrip.startPoint.lon.toFixed(4)}`);
-                        console.log(`End Point (Lat/Lon): ${endPoint.lat.toFixed(4)}, ${endPoint.lon.toFixed(4)}`);
+                        if (currentTrip.identifiedStartTerminal) {
+                            console.log(`Start Terminal: ${currentTrip.identifiedStartTerminal.name}`);
+                        } else {
+                            console.log(`Start Point (Lat/Lon): ${currentTrip.startPoint.lat.toFixed(4)}, ${currentTrip.startPoint.lon.toFixed(4)}`);
+                        }
+
+                        if (currentTrip.identifiedEndTerminal && minEndDistance < PROXIMITY_THRESHOLD_M) {
+                            console.log(`End Terminal: ${currentTrip.identifiedEndTerminal.name}`);
+                            statusDiv.textContent = `Trip Completed at ${currentTrip.identifiedEndTerminal.name}. Ready for next trip.`;
+                        } else {
+                            console.log(`End Point (Lat/Lon): ${endPoint.lat.toFixed(4)}, ${endPoint.lon.toFixed(4)} (No nearby terminal identified)`);
+                            statusDiv.textContent = 'Trip Completed. Ready for next trip.';
+                        }
+                        
                         const durationMinutes = (endPoint.timestamp - currentTrip.startPoint.timestamp) / 60000;
                         console.log(`Duration: ${durationMinutes.toFixed(1)} minutes`);
                         console.log('------------------------');
@@ -327,15 +504,14 @@
                         currentTrip.startPoint = null;
                         currentTrip.lastStop = null;
                         currentTrip.stopTimer = null;
+                        currentTrip.identifiedStartTerminal = null; // Reset
+                        currentTrip.identifiedEndTerminal = null;   // Reset
                         
-                        // Update status after confirmed trip end
-                        statusDiv.textContent = 'Trip Completed. Ready for next trip.';
                     }, MIN_STOP_TIME_MS); 
                 }
             }
             
             // --- 🌐 SUPABASE UPDATE (Runs every 30s) ---
-
             const { error: updateError } = await supabaseClient
                 .from('vehicle_location')
                 .update({ 
@@ -354,11 +530,12 @@
             } else if (!isMoving) {
                  statusDiv.textContent = `Stopped. Waiting to confirm trip end...`;
                  statusDiv.style.color = getSpeedColor(rawSpeed);
-            } else {
-                 const speedKPH = rawSpeed * 3.6;
-                 statusDiv.textContent = `Sharing location. Speed: ${speedKPH.toFixed(1)} km/h.`;
-                 statusDiv.style.color = getSpeedColor(rawSpeed);
+            } else if (!currentTrip.identifiedStartTerminal) { // If moving but no terminal identified yet
+                const speedKPH = rawSpeed * 3.6;
+                statusDiv.textContent = `Sharing location. Speed: ${speedKPH.toFixed(1)} km/h.`;
+                statusDiv.style.color = getSpeedColor(rawSpeed);
             }
+            // else: status is already set by trip start/end logic
         }
 
         function error(err) {
@@ -386,10 +563,8 @@
             
             const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
             
-            // Initial position update
             navigator.geolocation.getCurrentPosition(success, error, options);
 
-            // Set up the 30-second interval for subsequent updates
             intervalID = setInterval(() => {
                 navigator.geolocation.getCurrentPosition(success, error, options);
             }, PING_RATE_MS); 
@@ -409,13 +584,18 @@
                 clearInterval(intervalID);
                 intervalID = null;
             }
-            // Clear any pending trip end timer when stopping sharing
             if (currentTrip.stopTimer) {
                 clearTimeout(currentTrip.stopTimer);
                 currentTrip.stopTimer = null;
                 console.log("Trip end confirmation timer cleared.");
             }
-            currentTrip.isTrackingTrip = false; // Also reset trip state on stop
+            // Reset ALL trip state variables on stop
+            currentTrip.isTrackingTrip = false;
+            currentTrip.startPoint = null;
+            currentTrip.lastStop = null;
+            currentTrip.stopTimer = null;
+            currentTrip.identifiedStartTerminal = null; 
+            currentTrip.identifiedEndTerminal = null;  
 
             isTracking = false;
             statusDiv.textContent = `Viewing live updates. Ready to share.`;
@@ -438,6 +618,20 @@
                     }
                 )
                 .subscribe();
+            
+            // NEW: Subscribe to terminal changes too, to dynamically update map
+            supabaseClient.channel('all_terminals')
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table: 'terminals' }, // Listen for INSERT/UPDATE/DELETE
+                    (payload) => {
+                        console.log('Terminal change detected:', payload.eventType, payload.new?.name || payload.old?.name);
+                        // Re-fetch and re-display all terminals to keep the map updated
+                        fetchAndDisplayAllTerminals();
+                    }
+                )
+                .subscribe();
+
         }
 
         // --- EVENT LISTENERS ---
@@ -450,6 +644,7 @@
         };
 
         loginButton.onclick = handleLogin;
+        document.getElementById('captureTerminalButton').onclick = captureAndSaveTerminal;
     </script>
 </body>
 </html>
