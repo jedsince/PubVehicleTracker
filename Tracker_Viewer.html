@@ -37,10 +37,10 @@
         }
         .input-group input, .input-group button, .input-group select {
             padding: 10px; 
-            margin: 5px 0; /* Adjusted margin for better stacking */
+            margin: 5px 0;
             border: 1px solid #ccc; 
             border-radius: 4px;
-            width: 100%; /* Make inputs full width in the group */
+            width: 100%;
             box-sizing: border-box;
         }
         .input-group {
@@ -56,7 +56,7 @@
         }
         .input-group > div > button {
              flex-grow: 1;
-             width: auto; /* Reset width for flex items */
+             width: auto;
         }
 
         button {
@@ -188,7 +188,7 @@
 
     <script>
         // --- CONFIGURATION ---
-        // NOTE: Replace these with your actual Supabase and Mapbox keys!
+        // 🛑 NOTE: Replace these with your actual Supabase and Mapbox keys!
         const SUPABASE_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
         mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
@@ -221,7 +221,7 @@
         let currentTrackingId = null; 
         let currentVehicleType = null;
         let allTerminals = []; 
-        let currentUserRole = null; // 🛑 NEW: To store the user's role from user_profiles
+        let currentUserRole = null;
         
         let currentTrip = {
             isTrackingTrip: false, 
@@ -249,7 +249,7 @@
         const passwordInput = document.getElementById('password'); 
         const signOutButton = document.getElementById('signOutButton'); 
 
-        // 🛑 NEW SIGNUP ELEMENTS
+        // NEW SIGNUP ELEMENTS
         const signupContainer = document.getElementById('signup-container');
         const showSignupLink = document.getElementById('showSignupLink');
         const showLoginLink = document.getElementById('showLoginLink');
@@ -262,7 +262,7 @@
         
         // Menu Elements
         const terminalMenuContainer = document.getElementById('terminal-menu-container');
-        const sharerRouteControl = document.getElementById('sharer-route-control'); // 🛑 NEW
+        const sharerRouteControl = document.getElementById('sharer-route-control'); 
 
         // Manual Select Elements
         const startTerminalSelect = document.getElementById('startTerminalSelect');
@@ -431,7 +431,7 @@
         async function fetchAndDisplayViewerRoute(trackingId) {
             clearDisplayedRoute(); 
 
-            // NOTE: .single() removed to fix 406 Not Acceptable error
+            // NOTE: .single() removed to prevent the 406 Not Acceptable error
             const { data, error } = await supabaseClient
                 .from('active_routes')
                 .select('*')
@@ -585,6 +585,22 @@
             togglePinningMode();
         }
 
+        function captureAndSaveTerminal() {
+            const terminalName = document.getElementById('terminalNameInput').value;
+            const routeId = document.getElementById('routeIdInput').value.toUpperCase();
+            
+            if (!terminalName) { alert("Please enter a name!"); return; }
+            if (!navigator.geolocation) { alert('Geolocation not supported.'); return; }
+
+            const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
+
+            navigator.geolocation.getCurrentPosition(async (position) => {
+                await writeTerminalToSupabase(terminalName, position.coords.latitude, position.coords.longitude, routeId);
+            }, (err) => {
+                alert(`Could not get GPS location: ${err.message}`);
+            }, options);
+        }
+        
         async function writeTerminalToSupabase(name, lat, lon, routeId) {
             statusDiv.textContent = `Attempting to save ${name} (Route ${routeId || 'N/A'})...`;
             
@@ -607,22 +623,6 @@
                 document.getElementById('routeIdInput').value = ''; 
                 fetchAndDisplayAllTerminals();
             }
-        }
-        
-        function captureAndSaveTerminal() {
-            const terminalName = document.getElementById('terminalNameInput').value;
-            const routeId = document.getElementById('routeIdInput').value.toUpperCase();
-            
-            if (!terminalName) { alert("Please enter a name!"); return; }
-            if (!navigator.geolocation) { alert('Geolocation not supported.'); return; }
-
-            const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
-
-            navigator.geolocation.getCurrentPosition(async (position) => {
-                await writeTerminalToSupabase(terminalName, position.coords.latitude, position.coords.longitude, routeId);
-            }, (err) => {
-                alert(`Could not get GPS location: ${err.message}`);
-            }, options);
         }
 
 
@@ -680,10 +680,21 @@
                 statusDiv.style.color = '#dc3545';
                 return;
             }
+            
+            // 🛑 CRITICAL FIX: Ensure the session is loaded for the next API call (to prevent 401 Unauthorized)
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            
+            if (!session) {
+                // This means email confirmation is required AND the instant login failed.
+                statusDiv.textContent = 'Account created, but could not establish an active session immediately. Please check your email to confirm your account, then log in.';
+                statusDiv.style.color = '#dc3545';
+                toggleForms(false); // Switch back to login form
+                return;
+            }
+            
+            const userId = session.user.id; 
 
-            const userId = authData.user.id;
-
-            // 2. Insert Profile Data
+            // 2. Insert Profile Data (Requires RLS: authenticated role, CHECK Expression: auth.uid() = id)
             const { error: profileError } = await supabaseClient
                 .from('user_profiles')
                 .insert({
@@ -718,9 +729,11 @@
                 }
             }
             
-            statusDiv.textContent = 'SUCCESS! Please check your email to confirm your account, then log in.';
+            statusDiv.textContent = 'SUCCESS! Account created and logged in.';
             statusDiv.style.color = '#28a745';
-            toggleForms(false); 
+            
+            // Now that we have a session, initialize the sharer session
+            initializeSharerSession(session.user);
         }
 
         async function initializeSharerSession(user) {
@@ -730,6 +743,7 @@
             signOutButton.style.display = 'none';
             toggleButton.disabled = true;
             authContainer.style.display = 'block'; 
+            signupContainer.style.display = 'none'; // Ensure signup form is hidden
 
             // 1. Get the user's role and default tracking ID from the new table
             const { data: profileData, error: profileError } = await supabaseClient
@@ -845,7 +859,6 @@
             const rawLon = position.coords.longitude;
             const rawSpeed = position.coords.speed || 0;
             const rawHeading = position.coords.heading || 0;
-            const timestamp = position.timestamp;
             const snappedLocation = simpleSnap(rawLat, rawLon, position.coords.accuracy); 
             const isMoving = rawSpeed > SPEED_THRESHOLDS.SLOW;
 
@@ -857,7 +870,7 @@
 
             if (manualStartId && manualEndId) {
                 manualStartTerminal = allTerminals.find(t => t.id == manualStartId);
-                manualEndTerminal = allTerminals.find(t => t.id == manualEndId); // Corrected ID usage
+                manualEndTerminal = allTerminals.find(t => t.id == manualEndId);
             }
 
             // --- TRIP LOGIC START ---
@@ -865,7 +878,6 @@
                 if (currentTrip.stopTimer) { clearTimeout(currentTrip.stopTimer); currentTrip.stopTimer = null; }
 
                 if (!currentTrip.isTrackingTrip) {
-                    // ... (rest of trip start logic remains the same) ...
 
                     // ... Route Determination Logic ...
                     let startTerminalToUse = null;
@@ -878,7 +890,7 @@
                         statusDiv.textContent = `Trip Started (Manual): ${startTerminalToUse.name} -> ${endTerminalToUse.name}!`;
                         
                     } else {
-                        // FALLBACK: Proximity Detection (Unchanged)
+                        // FALLBACK: Proximity Detection
                         let closestStartTerminal = null;
                         let minStartDistance = Infinity;
 
@@ -892,13 +904,11 @@
 
                         if (closestStartTerminal && minStartDistance < PROXIMITY_THRESHOLD_M && closestStartTerminal.route_id) {
                             startTerminalToUse = closestStartTerminal;
-                            console.log(`TRIP START (Auto): ${startTerminalToUse.name}. Route ID: ${startTerminalToUse.route_id}`);
                             
                             let destinations = allTerminals.filter(t => 
                                 t.route_id === startTerminalToUse.route_id && t.id !== startTerminalToUse.id
                             );
                             
-                            // Simple logic: If multiple destinations, pick one. For a simple route, this works.
                             endTerminalToUse = destinations[0]; 
                             
                             statusDiv.textContent = endTerminalToUse 
@@ -913,7 +923,7 @@
 
                     // --- ROUTE DRAWING & PERSISTENCE ---
                     if (startTerminalToUse && endTerminalToUse) {
-                        currentTrip.isTrackingTrip = true; // Set here after route confirmed
+                        currentTrip.isTrackingTrip = true; 
                         currentTrip.identifiedStartTerminal = startTerminalToUse;
                         currentTrip.identifiedEndTerminal = endTerminalToUse; 
                         
@@ -935,13 +945,11 @@
 
                         if (routeError) { console.error('Error saving active route:', routeError); }
                     } else {
-                        // If no route was auto-detected or manually set, just start tracking location
                         currentTrip.isTrackingTrip = true;
                     }
                 }
 
             } else { // STOPPED OR SLOW
-                // ... (rest of stop detection logic remains the same) ...
                 
                 if (currentTrip.isTrackingTrip && !currentTrip.stopTimer) {
                     currentTrip.stopTimer = setTimeout(async () => {
@@ -1084,7 +1092,7 @@
         document.getElementById('loginButton').onclick = handleLogin; 
         signOutButton.onclick = handleSignOut; 
         
-        // 🛑 NEW SIGNUP LISTENERS
+        // NEW SIGNUP LISTENERS
         showSignupLink.onclick = (e) => {
             e.preventDefault();
             toggleForms(true);
