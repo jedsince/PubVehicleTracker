@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚌 Secure Transport Sharer & Viewer a0.401</title>
+    <title>🚌 Secure Transport Sharer & Viewer a0.402</title>
 
     <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
     <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
@@ -1710,4 +1710,43 @@
         showLoginLink.addEventListener('click', (e) => {
             e.preventDefault();
             authContainer.style.display = 'block';
+            signupContainer.style.display = 'none';
+        });
 
+        // Manual Route Controls
+        startTerminalSelect.addEventListener('change', (e) => {
+            populateEndTerminalSelect(e.target.value);
+        });
+        drawManualRouteButton.addEventListener('click', drawManualRoute);
+        clearManualRouteButton.addEventListener('click', () => {
+             clearDisplayedRoute();
+             markRouteAsInactive();
+             statusDiv.textContent = `Manual route cleared.`;
+             statusDiv.style.color = '#dc3545';
+        });
+
+        // Passenger/Viewer Controls
+        routeToTrackSelect.addEventListener('change', (e) => {
+            fetchVehiclesOnRoute(e.target.value);
+        });
+        setVehicleButton.addEventListener('click', setVehicleAsBeacon);
+        
+        // PASSENGER SEAT REPORT LISTENER
+        submitSeatReportBtn.addEventListener('click', submitSeatReport);
+
+        // NEW PASSENGER PINNING LISTENERS
+        dropPinPassengerButton.addEventListener('click', togglePassengerPinningMode);
+        savePassengerPinButton.addEventListener('click', savePinnedPassengerLocation);
+
+
+        // Initial check on page load
+        supabaseClient.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+                updateUI(session.user.id);
+            } else {
+                updateUI(null);
+            }
+        });
+    </script>
+</body>
+</html>
