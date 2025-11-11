@@ -111,7 +111,7 @@
         .input-group input, .input-group select { width: 100%; }
         .input-group > div { flex-direction: column; gap: 5px; }
 
-        /* Status and Toggle Button Positioning */
+        /* Status Bar Positioning */
         #status-bar {
             position: fixed;
             top: 55px; 
@@ -126,6 +126,28 @@
         .share-btn { background-color: #28a745; color: white; }
         .stop-btn { background-color: #dc3545; color: white; }
         .status-text { font-weight: bold; }
+        
+        /* Floating Action Button (FAB) STYLES */
+        #floating-tracking-btn {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: none;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+            font-size: 24px;
+            font-weight: bold;
+            color: white;
+            cursor: pointer;
+            z-index: 100; /* Ensure it's above everything */
+            transition: background-color 0.2s, transform 0.1s;
+            display: none; /* Hidden by default until logged in */
+        }
+        #floating-tracking-btn:active {
+            transform: scale(0.95);
+        }
         
         /* Vehicle/Terminal styles remain the same */
         .direction-arrow {
@@ -166,6 +188,8 @@
         <div id="status" class="status-text">Checking login status...</div>
     </div>
     
+    <button id="floating-tracking-btn" class="share-btn">▶</button>
+
     <div id="sidebar-menu">
         <div class="menu-content">
             
@@ -180,7 +204,7 @@
                         <button id="loginButton">Login</button>
                     </div>
                     <p style="margin-top: 10px;">New user? 
-                        <a href="#" id="showSignupLink">Create an Account</a>
+                        <a href="#" id="showSignupLink">Create Account</a>
                     </p>
                 </div>
             </div>
@@ -192,14 +216,6 @@
                     <input type="email" id="signup-email" placeholder="Email" required>
                     <input type="password" id="signup-password" placeholder="Password (Min 6 chars)" required>
                     
-                    <select id="signup-role">
-                        <option value="">-- I am a --</option>
-                        <option value="driver">Driver / Vehicle Owner</option>
-                        <option value="sharer_passenger">Passenger (to act as beacon)</option>
-                    </select>
-
-                    <input type="text" id="signup-tracking-id" placeholder="Plate Number (e.g., ABC-123)" style="display:none;">
-
                     <button id="signupButton" class="share-btn" style="width: 100%;">Sign Up</button>
                     <p style="margin-top: 10px;">Already have an account? 
                         <a href="#" id="showLoginLink">Go to Login</a>
@@ -208,9 +224,19 @@
             </div>
             
             <div id="sharer-controls-container" style="display: none;">
-                <button id="toggleButton" class="share-btn" disabled style="width: 100%;">Start Sharing Location</button>
+                
+                <div id="role-setup-container" style="padding: 10px 0; border-bottom: 1px solid #ddd; margin-bottom: 10px;">
+                    <h4>Account Setup</h4>
+                    <select id="userRoleSelect">
+                        <option value="">-- I am a --</option>
+                        <option value="driver">Driver / Vehicle Owner</option>
+                        <option value="viewer">Passenger / Viewer</option>
+                    </select>
+                    <input type="text" id="setup-tracking-id" placeholder="Plate Number (e.g., ABC-123)" style="display:none; margin-top: 5px;">
+                    <button id="saveRoleButton" style="width: 100%; margin-top: 5px; background-color: #007bff;">Save My Role</button>
+                </div>
 
-                <div id="vehicle-selection-container" style="display: none; padding: 10px 0;">
+                <div id="viewer-selection-container" style="display: none; padding: 10px 0;">
                     <h4>Select Route to View:</h4>
                     <select id="routeToTrackSelect" style="margin-bottom: 5px;">
                         <option value="">-- Start Location is Being Determined... --</option>
@@ -222,7 +248,7 @@
                     <button id="setVehicleButton" style="width: 100%; margin-top: 5px; background-color: #007bff;" disabled>Confirm Vehicle to Track</button>
                 </div>
 
-                <div id="sharer-route-control" class="controls" style="flex-direction: column; align-items: stretch; gap: 10px;">
+                <div id="sharer-route-control" class="controls" style="flex-direction: column; align-items: stretch; gap: 10px; display: none;">
                     <h4>Manual Route Setting</h4>
                     <div style="display: flex; flex-direction: column; gap: 5px; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
                         <label for="startTerminalSelect">Starting Point:</label>
@@ -314,7 +340,6 @@
         // --- DOM Elements & Supabase Client ---
         const sidebarMenu = document.getElementById('sidebar-menu');
         const sidebarOverlay = document.getElementById('sidebar-overlay');
-        const toggleButton = document.getElementById('toggleButton');
         const statusDiv = document.getElementById('status');
         const authContainer = document.getElementById('auth-container');
         const sharerControlsContainer = document.getElementById('sharer-controls-container');
@@ -330,20 +355,28 @@
         const signupNameInput = document.getElementById('signup-name');
         const signupEmailInput = document.getElementById('signup-email');
         const signupPasswordInput = document.getElementById('signup-password');
-        const signupRoleSelect = document.getElementById('signup-role');
-        const signupTrackingIdInput = document.getElementById('signup-tracking-id');
+        
+        // FLOATING BUTTON
+        const floatingTrackingBtn = document.getElementById('floating-tracking-btn');
+        
+        // NEW SETUP CONTROLS
+        const userRoleSelect = document.getElementById('userRoleSelect');
+        const setupTrackingIdInput = document.getElementById('setup-tracking-id');
+        const saveRoleButton = document.getElementById('saveRoleButton');
+        
+        // VIEWER CONTROLS
+        const viewerSelectionContainer = document.getElementById('viewer-selection-container');
+        const routeToTrackSelect = document.getElementById('routeToTrackSelect');
+        const vehicleToTrackSelect = document.getElementById('vehicleToTrackSelect');
+        const setVehicleButton = document.getElementById('setVehicleButton');
+        
+        // SHARER CONTROLS
         const startTerminalSelect = document.getElementById('startTerminalSelect');
         const endTerminalSelect = document.getElementById('endTerminalSelect');
         const drawManualRouteButton = document.getElementById('drawManualRouteButton');
         const clearManualRouteButton = document.getElementById('clearManualRouteButton');
         const sharerRouteControl = document.getElementById('sharer-route-control'); 
         const loginErrorMessageDiv = document.getElementById('login-error-message'); 
-        
-        // NEW ELEMENTS FOR PASSENGER BEACON LOGIC
-        const vehicleSelectionContainer = document.getElementById('vehicle-selection-container');
-        const routeToTrackSelect = document.getElementById('routeToTrackSelect');
-        const vehicleToTrackSelect = document.getElementById('vehicleToTrackSelect');
-        const setVehicleButton = document.getElementById('setVehicleButton');
         
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         
@@ -423,14 +456,16 @@
                         <p>Speed: ${speedKPH.toFixed(1)} km/h<br>Heading: ${heading.toFixed(0)}&deg;</p>
                     `);
             
+            // Auto-follow current tracking ID (sharer or viewer's selected vehicle)
             const isCurrentUser = isTracking && trackingId === currentTrackingId;
-            if (isCurrentUser) {
+            const isViewerTracking = !isTracking && trackingId === currentTrackingId;
+
+            if (isCurrentUser || isViewerTracking) {
                  map.flyTo({ center: newLngLat, speed: 0.5 });
-            } else {
-                 map.flyTo({ center: newLngLat, speed: 0.5 }); 
             }
+            
             if (!isCurrentUser) {
-                // Pass current location data along with the tracking ID
+                // Fetch and display route for all tracked vehicles (if active route exists)
                 fetchAndDisplayViewerRoute(trackingId, data.latitude, data.longitude); 
             }
         }
@@ -461,12 +496,11 @@
             console.log(`Loaded ${allTerminals.length} terminals and populated dropdowns.`);
         }
 
-        // fetchAndDisplayRoute now accepts currentLat, currentLon for dynamic routing
         async function fetchAndDisplayRoute(startTerminal, endTerminal, currentLat, currentLon) {
             const startCoords = `${startTerminal.longitude},${startTerminal.latitude}`;
             const endCoords = `${endTerminal.longitude},${endTerminal.latitude}`;
             
-            // NEW: Include the vehicle's current location as a via point
+            // Include the vehicle's current location as a via point
             const currentCoords = `${currentLon},${currentLat}`;
 
             const coordsString = `${startCoords};${currentCoords};${endCoords}`;
@@ -499,7 +533,6 @@
             }
         }
 
-        // fetchAndDisplayViewerRoute now accepts currentLat, currentLon
         async function fetchAndDisplayViewerRoute(trackingId, currentLat, currentLon) { 
             clearDisplayedRoute(); 
 
@@ -517,7 +550,6 @@
             const startTerminal = { latitude: routeData.start_lat, longitude: routeData.start_lon, name: routeData.start_name };
             const endTerminal = { latitude: routeData.end_lat, longitude: routeData.end_lon, name: routeData.end_name };
             
-            // MODIFIED CALL: Now uses the three-point route calculation
             fetchAndDisplayRoute(startTerminal, endTerminal, currentLat, currentLon); 
         }
 
@@ -655,10 +687,10 @@
             }
         }
 
-        // --- PASSENGER BEACON LOGIC ---
+        // --- VIEWER/PASSENGER LOGIC ---
         
-        // Step 1 - Get location and find nearby routes
         function identifyNearbyRoutes() {
+            viewerSelectionContainer.style.display = 'block';
             routeToTrackSelect.innerHTML = '<option value="">-- Searching for Nearby Stops/Stations... --</option>';
             if (!navigator.geolocation) {
                 routeToTrackSelect.innerHTML = '<option value="">Geolocation not supported.</option>';
@@ -696,7 +728,6 @@
             }, options);
         }
 
-        // Step 2 - Get active vehicles on selected route
         async function fetchVehiclesOnRoute(routeId) {
             vehicleToTrackSelect.innerHTML = '<option value="">-- Loading Vehicles... --</option>';
             if (!routeId) {
@@ -729,15 +760,16 @@
             }
         }
 
-        // Step 3 - Set the beacon
         function setVehicleAsBeacon() {
             const selectedTrackingId = vehicleToTrackSelect.value;
             if (!selectedTrackingId) {
                 alert("Please select a vehicle's plate number first.");
                 return;
             }
+            // Stop current tracking if active (although passenger shouldn't be tracking)
+            if(isTracking) stopLocationSharing(); 
+            
             currentTrackingId = selectedTrackingId;
-
             statusDiv.textContent = `Tracking Plate No. ${currentTrackingId}...`;
             statusDiv.style.color = '#007bff';
             toggleSidebar(); // Close menu
@@ -771,50 +803,26 @@
             const email = signupEmailInput.value;
             const password = signupPasswordInput.value;
             const name = signupNameInput.value;
-            const role = signupRoleSelect.value;
-            const trackingId = signupTrackingIdInput.value;
             
-            if (!email || !password || !name || !role) {
+            if (!email || !password || !name) {
                 alert("Please fill in all required fields.");
                 return;
             }
 
-            // Validation for driver/sharer
-            if ((role === 'driver' || role === 'sharer_passenger') && !trackingId) {
-                 alert("Drivers and Sharer Passengers must provide a Plate Number.");
-                 return;
-            }
-            
-            // 1. Sign up the user in auth.users
-            const { data, error: authError } = await supabaseClient.auth.signUp({ 
+            // Note: role and tracking_id are *not* provided here. 
+            // The SQL trigger must be updated to handle these missing values (e.g., set role='viewer' and tracking_id=NULL).
+            const { error: authError } = await supabaseClient.auth.signUp({ 
                 email, 
                 password,
                 options: {
-                    data: { full_name: name, role: role, tracking_id: trackingId.toUpperCase() }
+                    data: { full_name: name, role: 'viewer', tracking_id: null } 
+                    // Set default metadata here for the trigger
                 }
             });
 
             if (authError) {
                 alert(`Sign Up Error: ${authError.message}`);
                 return;
-            }
-            
-            // 2. Insert into the public profile table (Table name corrected to user_profiles)
-            const user = data.user;
-            const { error: profileError } = await supabaseClient
-                .from('user_profiles') // ✅ CORRECTED HERE
-                .insert({ 
-                    id: user.id, 
-                    full_name: name, 
-                    role: role, 
-                    tracking_id: trackingId.toUpperCase()
-                });
-
-            if (profileError) {
-                 // Clean up the auth user if profile insertion fails
-                 await supabaseClient.auth.admin.deleteUser(user.id);
-                 alert(`Profile save failed, cleaning up user: ${profileError.message}`);
-                 return;
             }
             
             alert('Account created! Please check your email for a confirmation link.');
@@ -836,27 +844,59 @@
             clearDisplayedRoute();
         }
 
+        async function saveUserRoleSetup(userId) {
+            const newRole = userRoleSelect.value;
+            const newTrackingId = setupTrackingIdInput.value.toUpperCase();
+
+            if (!newRole) {
+                alert("Please select a role.");
+                return;
+            }
+            if (newRole === 'driver' && !newTrackingId) {
+                alert("Drivers must provide a Plate Number.");
+                return;
+            }
+
+            const { error } = await supabaseClient
+                .from('user_profiles') 
+                .update({ 
+                    role: newRole, 
+                    tracking_id: newRole === 'driver' ? newTrackingId : null // Clear tracking ID if viewer
+                })
+                .eq('id', userId);
+
+            if (error) {
+                alert(`Error saving role: ${error.message}`);
+                console.error("Error saving profile:", error);
+            } else {
+                alert(`Role saved as ${newRole}.`);
+                // Force UI update to refresh new role and tracking ID
+                await checkUserRole(userId);
+                updateUI(userId);
+                toggleSidebar();
+            }
+        }
+
         async function checkUserRole(userId) {
             if (ADMIN_SHARER_IDS.includes(userId)) {
                 currentUserRole = 'admin';
                 console.log("User is Admin.");
             }
             
-            // Fetch profile data (Table name corrected to user_profiles)
             const { data, error } = await supabaseClient
-                .from('user_profiles') // ✅ CORRECTED HERE
+                .from('user_profiles') 
                 .select('role, tracking_id')
                 .eq('id', userId)
                 .single();
 
             if (error) {
                 console.error("Error fetching profile:", error);
-                // Default to viewer role if profile fetch fails
+                // If profile fetch fails, assume viewer but keep the ID as null
                 currentUserRole = 'viewer'; 
             } else {
                 currentUserRole = data.role;
                 currentTrackingId = data.tracking_id;
-                currentVehicleType = data.tracking_id ? data.tracking_id.split('-')[0] : 'vehicle'; // Simple type inference
+                currentVehicleType = data.tracking_id ? data.tracking_id.split('-')[0] : 'vehicle'; 
             }
 
              console.log(`User role set to: ${currentUserRole}`);
@@ -874,28 +914,58 @@
             signupContainer.style.display = 'none';
             signOutButton.style.display = loggedIn ? 'block' : 'none';
             sharerControlsContainer.style.display = loggedIn ? 'block' : 'none';
-            terminalToolsContainer.style.display = 'none'; // Default hidden
+            terminalToolsContainer.style.display = 'none'; 
+            floatingTrackingBtn.style.display = loggedIn ? 'block' : 'none';
 
             if (loggedIn) {
-                statusDiv.textContent = currentTrackingId ? `Logged in as Sharer: ${currentTrackingId}` : `Logged in as Viewer/Passenger.`;
-                statusDiv.style.color = '#28a745';
-                toggleButton.disabled = currentUserRole !== 'driver' && currentUserRole !== 'sharer_passenger';
+                const isDriver = currentUserRole === 'driver';
+                const needsSetup = !currentUserRole || currentUserRole === 'viewer' && !currentTrackingId;
 
-                // Display appropriate controls
-                if (currentUserRole === 'driver' || currentUserRole === 'sharer_passenger') {
-                    // Driver/Beacon controls
-                    vehicleSelectionContainer.style.display = 'none';
-                    sharerRouteControl.style.display = 'flex';
-                } else {
-                    // Viewer/Passenger controls (use the beacon selection to track others)
+                // --- Sidebar Controls ---
+                if (needsSetup) {
+                    // Show role setup for new users or viewers who haven't set an ID
+                    document.getElementById('role-setup-container').style.display = 'block';
+                    viewerSelectionContainer.style.display = 'none';
                     sharerRouteControl.style.display = 'none';
-                    vehicleSelectionContainer.style.display = 'block';
-                    identifyNearbyRoutes();
+                    statusDiv.textContent = 'Account Setup Required.';
+                    statusDiv.style.color = '#dc3545';
+                    floatingTrackingBtn.disabled = true;
+                    floatingTrackingBtn.style.backgroundColor = '#6c757d'; // Greyed out
+                    floatingTrackingBtn.textContent = '🚫';
+                } else if (isDriver) {
+                    // Driver controls
+                    document.getElementById('role-setup-container').style.display = 'block'; // Still available for role change
+                    viewerSelectionContainer.style.display = 'none';
+                    sharerRouteControl.style.display = 'flex';
+                    statusDiv.textContent = `Ready to Share: ${currentTrackingId}`;
+                    statusDiv.style.color = '#28a745';
+                    floatingTrackingBtn.disabled = false;
+                } else { // Viewer role
+                    // Viewer controls
+                    document.getElementById('role-setup-container').style.display = 'block'; // Still available for role change
+                    sharerRouteControl.style.display = 'none';
+                    identifyNearbyRoutes(); // Populates viewerSelectionContainer
+                    statusDiv.textContent = 'Logged in as Viewer/Passenger.';
+                    statusDiv.style.color = '#007bff';
+                    floatingTrackingBtn.disabled = true;
+                    floatingTrackingBtn.style.backgroundColor = '#6c757d'; 
+                    floatingTrackingBtn.textContent = '🚫';
                 }
 
                 // Admin/Terminal controls
                 if (currentUserRole === 'admin') {
                     terminalToolsContainer.style.display = 'block';
+                }
+                
+                // --- Floating Button State ---
+                if (isTracking) {
+                    floatingTrackingBtn.classList.remove('share-btn');
+                    floatingTrackingBtn.classList.add('stop-btn');
+                    floatingTrackingBtn.textContent = '■';
+                } else {
+                    floatingTrackingBtn.classList.remove('stop-btn');
+                    floatingTrackingBtn.classList.add('share-btn');
+                    floatingTrackingBtn.textContent = '▶';
                 }
 
             } else {
@@ -907,6 +977,10 @@
 
         // --- LOCATION SHARING/PINGING LOGIC ---
         function toggleLocationSharing() {
+            if (!currentUserRole || currentUserRole === 'viewer' || !currentTrackingId) {
+                alert("Please set your role as 'Driver' and provide a Plate Number in Account Setup before sharing location.");
+                return;
+            }
             if (isTracking) {
                 stopLocationSharing();
             } else {
@@ -915,25 +989,21 @@
         }
 
         function startLocationSharing() {
-            if (!currentTrackingId) {
-                alert("Plate Number not set. Please ensure your profile is correct.");
-                return;
-            }
             if (!navigator.geolocation) {
                 alert('Geolocation is not supported by this browser.');
                 return;
             }
 
             statusDiv.textContent = `Attempting to start location sharing...`;
-            toggleButton.disabled = true;
+            floatingTrackingBtn.disabled = true;
 
             const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
             navigator.geolocation.getCurrentPosition(position => {
                 isTracking = true;
-                toggleButton.textContent = 'Stop Sharing Location';
-                toggleButton.classList.remove('share-btn');
-                toggleButton.classList.add('stop-btn');
-                toggleButton.disabled = false;
+                floatingTrackingBtn.classList.remove('share-btn');
+                floatingTrackingBtn.classList.add('stop-btn');
+                floatingTrackingBtn.textContent = '■';
+                floatingTrackingBtn.disabled = false;
                 
                 // First ping immediately
                 updateLocationInSupabase(position); 
@@ -951,17 +1021,15 @@
                 clearInterval(intervalID);
                 intervalID = null;
             }
-            toggleButton.textContent = 'Start Sharing Location';
-            toggleButton.classList.remove('stop-btn');
-            toggleButton.classList.add('share-btn');
+            floatingTrackingBtn.classList.remove('stop-btn');
+            floatingTrackingBtn.classList.add('share-btn');
+            floatingTrackingBtn.textContent = '▶';
             statusDiv.textContent = `Location sharing stopped for ${currentTrackingId}.`;
             statusDiv.style.color = '#dc3545';
             clearDisplayedRoute();
             
-            // Mark route as inactive
             markRouteAsInactive();
             
-            // Clear current trip state
             currentTrip = { isTrackingTrip: false, startPoint: null, lastStop: null, stopTimer: null, identifiedStartTerminal: null, identifiedEndTerminal: null };
         }
 
@@ -984,27 +1052,21 @@
         async function updateLocationInSupabase(position) {
             const { latitude: rawLat, longitude: rawLon, speed, heading, accuracy } = position.coords;
             const { lat, lon } = simpleSnap(rawLat, rawLon, accuracy);
-            const speedKPH = (speed || 0) * 3.6; // Convert m/s to kph
-
-            // Use device orientation if GPS heading is poor or zero
+            const speedKPH = (speed || 0) * 3.6; 
             const finalHeading = (heading !== null && heading > 0) ? heading : (deviceOrientationHeading || 0);
             
-            // 1. Check for Terminal Proximity and manage trip state
-            // Logic to be implemented here (omitted for brevity but required for start/end terminals)
-
-            // 2. Update the vehicle_location table (Upsert)
             const { error } = await supabaseClient
                 .from('vehicle_location')
                 .upsert({
                     tracking_id: currentTrackingId,
                     latitude: lat,
                     longitude: lon,
-                    speed: speedKPH / 3.6, // Store in m/s
+                    speed: speedKPH / 3.6, 
                     heading: finalHeading,
                     accuracy: accuracy,
                     vehicle_type: currentVehicleType, 
                     last_updated: new Date().toISOString()
-                }, { on_conflict: 'tracking_id' }); // NOTE: Must have a UNIQUE constraint on 'tracking_id' in your DB!
+                }, { on_conflict: 'tracking_id' }); 
 
             if (error) {
                 console.error("Supabase update/insert error:", error);
@@ -1017,7 +1079,7 @@
         }
 
 
-        // --- MANUAL ROUTE LOGIC (Simplified) ---
+        // --- MANUAL ROUTE LOGIC ---
         function populateEndTerminalSelect(startTerminalId) {
              endTerminalSelect.innerHTML = '<option value="">-- Select Destination Point --</option>';
              endTerminalSelect.disabled = true;
@@ -1039,6 +1101,11 @@
         }
         
         async function drawManualRoute() {
+            if (!currentTrackingId) {
+                alert("Please set your Plate Number in Account Setup before setting a route.");
+                return;
+            }
+
             const startId = startTerminalSelect.value;
             const endId = endTerminalSelect.value;
 
@@ -1050,12 +1117,6 @@
             const startTerminal = allTerminals.find(t => t.id == startId);
             const endTerminal = allTerminals.find(t => t.id == endId);
 
-            if (!startTerminal || !endTerminal) {
-                alert("Selected terminal data not found.");
-                return;
-            }
-            
-            // Get current location for the middle point
             if (!navigator.geolocation) {
                 alert('Cannot draw route without current GPS location.');
                 return;
@@ -1064,10 +1125,8 @@
                  const currentLat = position.coords.latitude;
                  const currentLon = position.coords.longitude;
                  
-                 // Display the route
                  await fetchAndDisplayRoute(startTerminal, endTerminal, currentLat, currentLon);
 
-                 // Also save the active route to the database for viewers
                  const { error } = await supabaseClient
                     .from('active_routes')
                     .upsert({
@@ -1095,10 +1154,25 @@
         }
 
         // --- EVENT LISTENERS ---
-        document.getElementById('toggleButton').addEventListener('click', toggleLocationSharing);
+        floatingTrackingBtn.addEventListener('click', toggleLocationSharing);
         loginButton.addEventListener('click', handleLogin);
         signOutButton.addEventListener('click', handleSignOut);
         signupButton.addEventListener('click', handleSignUp);
+        
+        // NEW ROLE SETUP LISTENERS
+        userRoleSelect.addEventListener('change', () => {
+            if (userRoleSelect.value === 'driver') {
+                setupTrackingIdInput.style.display = 'block';
+            } else {
+                setupTrackingIdInput.style.display = 'none';
+                setupTrackingIdInput.value = ''; // Clear if switching to viewer
+            }
+        });
+        saveRoleButton.addEventListener('click', () => {
+            const userId = supabaseClient.auth.getUser()?.id;
+            if (userId) saveUserRoleSetup(userId);
+        });
+
         document.getElementById('dropPinButton').addEventListener('click', togglePinningMode);
         document.getElementById('savePinButton').addEventListener('click', savePinnedTerminal);
         document.getElementById('captureGPSButton').addEventListener('click', captureAndSaveTerminal);
@@ -1119,15 +1193,6 @@
             signupContainer.style.display = 'none';
         });
 
-        // Signup role logic
-        signupRoleSelect.addEventListener('change', () => {
-            if (signupRoleSelect.value === 'driver' || signupRoleSelect.value === 'sharer_passenger') {
-                signupTrackingIdInput.style.display = 'block';
-            } else {
-                signupTrackingIdInput.style.display = 'none';
-            }
-        });
-
         // Manual Route Controls
         startTerminalSelect.addEventListener('change', (e) => {
             populateEndTerminalSelect(e.target.value);
@@ -1140,7 +1205,7 @@
              statusDiv.style.color = '#dc3545';
         });
 
-        // Passenger Beacon Controls
+        // Passenger/Viewer Controls
         routeToTrackSelect.addEventListener('change', (e) => {
             fetchVehiclesOnRoute(e.target.value);
         });
