@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚌 Secure Transport Sharer & Viewer a0.408</title>
+    <title>🚌 Secure Transport v.a0.409 Sharer & Viewer a0.2</title>
 
     <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
     <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
@@ -210,7 +210,7 @@
             margin-bottom: 5px;
         }
 
-        /* Terminal/Vehicle markers styles (no change) */
+        /* Terminal/Vehicle markers styles */
         .direction-arrow {
             width: 0;
             height: 0;
@@ -437,6 +437,7 @@
         let occupiedSeats = 0; 
         let allTerminals = []; 
         let currentUserRole = null;
+        let isSharingBeacon = false; // <<< NEW STATE VARIABLE for passenger sharing
         let currentTrip = { isTrackingTrip: false, startPoint: null, lastStop: null, stopTimer: null, identifiedStartTerminal: null, identifiedEndTerminal: null };
         let isPinningMode = false;
         let tempTerminalMarker = null;
@@ -564,46 +565,89 @@
         function updateMarker(data) {
             const plateNumber = data.plate_number;
             if (!data.latitude || !data.longitude || !plateNumber) return; 
+            
+            const isPassengerBeacon = plateNumber.startsWith('user-'); // <<< NEW CHECK
+            
             const type = data.vehicle_type || 'default';
             const newLngLat = [data.longitude, data.latitude];
             const speed = data.speed || 0;
             const heading = data.heading || 0; 
-            const arrowColor = getSpeedColor(speed);
-            const emptySeats = data.empty_seats !== null ? data.empty_seats : 'N/A';
-            const totalPassengers = data.total_passengers !== null ? data.total_passengers : 'N/A';
-
+            const speedKPH = speed * 3.6;
+            
             let marker = activeMarkers.get(plateNumber);
             
             if (!marker) {
                 const el = document.createElement('div');
-                el.className = 'direction-arrow';
-                marker = new mapboxgl.Marker({ element: el, anchor: 'center' }) 
-                    .setLngLat(newLngLat)
-                    .setPopup(new mapboxgl.Popup({ offset: 25 })) 
-                    .addTo(map);
-                activeMarkers.set(plateNumber, marker);
-            }
-            const markerElement = marker.getElement();
-            markerElement.style.borderBottomColor = arrowColor;
-            // Applying the heading for rotation
-            markerElement.style.transform = `rotate(${heading}deg)`; 
-            const speedKPH = speed * 3.6;
-            
-            let capacityFromType = 0;
-            if (currentPlateNumber === plateNumber && currentVehicleCapacity) {
-                 capacityFromType = currentVehicleCapacity;
-            } 
-            const occupied = (capacityFromType && emptySeats !== 'N/A') ? (capacityFromType - emptySeats) : totalPassengers;
+                let popupContent = '';
 
+                if (isPassengerBeacon) {
+                    el.className = 'terminal-marker'; // Use a simple circle for passenger
+                    el.style.backgroundColor = '#ff5722'; // Orange/Red color for beacon
+                    el.textContent = '👤';
+                    el.style.width = '25px';
+                    el.style.height = '25px';
+                    el.style.fontSize = '14px';
+                    popupContent = `
+                        <h4>Passenger Beacon</h4>
+                        <p>Waiting for transport (Speed: ${speedKPH.toFixed(1)} km/h)</p>
+                    `;
+                } else {
+                    const arrowColor = getSpeedColor(speed);
+                    el.className = 'direction-arrow';
+                    el.style.borderBottomColor = arrowColor;
+                    el.style.transform = `rotate(${heading}deg)`; 
 
-            marker.setLngLat(newLngLat)
-                     .getPopup()
-                    .setHTML(`
+                    const emptySeats = data.empty_seats !== null ? data.empty_seats : 'N/A';
+                    const capacityFromType = currentVehicleCapacity || 'N/A'; // Assuming driver has capacity set
+                    const occupied = (capacityFromType !== 'N/A' && emptySeats !== 'N/A') ? (capacityFromType - emptySeats) : (data.total_passengers !== null ? data.total_passengers : 'N/A');
+
+                    popupContent = `
                         <h4>${type.toUpperCase()} Plate No.: ${plateNumber}</h4>
                         <p>Speed: ${speedKPH.toFixed(1)} km/h<br>Heading: ${heading.toFixed(0)}&deg;</p>
                         <p>Occupied Seats: <b>${occupied}</b> | Empty Seats: <b>${emptySeats}</b></p>
-                    `);
+                    `;
+                }
+
+                marker = new mapboxgl.Marker({ element: el, anchor: 'center' }) 
+                    .setLngLat(newLngLat)
+                    .setPopup(new mapboxgl.Popup({ offset: 25 }).setHTML(popupContent)) 
+                    .addTo(map);
+                activeMarkers.set(plateNumber, marker);
+            }
             
+            const markerElement = marker.getElement();
+            
+            if (!isPassengerBeacon) {
+                // Update driver marker visuals
+                const arrowColor = getSpeedColor(speed);
+                markerElement.style.borderBottomColor = arrowColor;
+                markerElement.style.transform = `rotate(${heading}deg)`;
+                
+                // Update driver popup content
+                const emptySeats = data.empty_seats !== null ? data.empty_seats : 'N/A';
+                let capacityFromType = 0;
+                if (currentPlateNumber === plateNumber && currentVehicleCapacity) {
+                     capacityFromType = currentVehicleCapacity;
+                } 
+                const occupied = (capacityFromType && emptySeats !== 'N/A') ? (capacityFromType - emptySeats) : (data.total_passengers !== null ? data.total_passengers : 'N/A');
+
+                marker.setLngLat(newLngLat)
+                         .getPopup()
+                        .setHTML(`
+                            <h4>${type.toUpperCase()} Plate No.: ${plateNumber}</h4>
+                            <p>Speed: ${speedKPH.toFixed(1)} km/h<br>Heading: ${heading.toFixed(0)}&deg;</p>
+                            <p>Occupied Seats: <b>${occupied}</b> | Empty Seats: <b>${emptySeats}</b></p>
+                        `);
+            } else {
+                 // Update passenger popup content
+                 marker.setLngLat(newLngLat)
+                         .getPopup()
+                        .setHTML(`
+                            <h4>Passenger Beacon</h4>
+                            <p>Waiting for transport (Speed: ${speedKPH.toFixed(1)} km/h)</p>
+                        `);
+            }
+
             // Auto-follow current tracking ID (sharer or viewer's selected vehicle)
             const isCurrentUser = isTracking && plateNumber === currentPlateNumber;
             const isViewerTracking = !isTracking && plateNumber === currentPlateNumber;
@@ -612,7 +656,7 @@
                  map.flyTo({ center: newLngLat, speed: 0.5 });
             }
             
-            if (!isCurrentUser) {
+            if (!isCurrentUser && !isPassengerBeacon) {
                 fetchAndDisplayViewerRoute(plateNumber, data.latitude, data.longitude); 
             }
         }
@@ -641,7 +685,6 @@
                 activeTerminalMarkers.set(terminal.id, marker);
             });
             console.log(`Loaded ${allTerminals.length} terminals and populated dropdowns.`);
-            // 🛑 REMOVED RECURSIVE CALL: updateUI(userId); 
         }
 
         async function fetchAndDisplayRoute(startTerminal, endTerminal, currentLat, currentLon) {
@@ -681,7 +724,7 @@
         }
 
         async function fetchAndDisplayViewerRoute(plateNumber, currentLat, currentLon) { 
-            if (plateNumber === currentPlateNumber) {
+            if (plateNumber === currentPlateNumber || plateNumber.startsWith('user-')) {
                  clearDisplayedRoute(); 
             }
 
@@ -920,6 +963,7 @@
             currentPlateNumber = selectedOption.value;
             currentVehicleType = selectedOption.dataset.type;
             currentVehicleCapacity = parseInt(selectedOption.dataset.capacity);
+            isSharingBeacon = false; // Ensure beacon mode is off for drivers
             
             // Initialize on-map controls
             occupiedSeats = 0; 
@@ -932,17 +976,18 @@
             
             // Re-enable floating button with correct state
             floatingTrackingBtn.disabled = false;
-            floatingTrackingBtn.classList.remove('stop-btn');
-            floatingTrackingBtn.classList.add('share-btn');
-            floatingTrackingBtn.textContent = '▶';
             
             sharerRouteControl.style.display = 'flex';
+            updateUI(supabaseClient.auth.getUser().data.user?.id); // Update button visuals
             toggleSidebar();
         }
 
         // --- VIEWER/PASSENGER LOGIC ---
         
         function identifyNearbyRoutes() {
+            // ... (Only run if not currently sharing a beacon)
+            if (isSharingBeacon) return; 
+            
             viewerSelectionContainer.style.display = 'block';
             passengerSeatReportForm.style.display = 'none'; 
             routeToTrackSelect.innerHTML = '<option value="">-- Searching for Nearby Stops/Stations... --</option>';
@@ -1023,6 +1068,7 @@
             if(isTracking) stopLocationSharing(); 
             
             currentPlateNumber = selectedPlateNumber;
+            isSharingBeacon = false; // Ensure tracking mode
             statusDiv.textContent = `Tracking Plate No. ${currentPlateNumber}...`;
             statusDiv.style.color = '#007bff';
             
@@ -1113,6 +1159,8 @@
         }
 
         async function handleSignOut() {
+            if (isTracking) stopLocationSharing(); 
+
             const { error } = await supabaseClient.auth.signOut();
             if (error) {
                 console.error("Sign out error:", error);
@@ -1121,6 +1169,7 @@
             currentUserRole = null;
             currentPlateNumber = null;
             isTracking = false;
+            isSharingBeacon = false;
             occupiedSeats = 0; 
             onMapControls.style.display = 'none'; 
             if (intervalID) clearInterval(intervalID);
@@ -1153,6 +1202,8 @@
                 alert(`Role saved as ${newRole}.`);
                 
                 currentUserRole = newRole;
+                currentPlateNumber = null; // Reset context
+                isSharingBeacon = false;
                 updateUI(userId); 
                 toggleSidebar();
             }
@@ -1199,8 +1250,6 @@
             floatingTrackingBtn.style.display = loggedIn ? 'block' : 'none';
             onMapControls.style.display = 'none'; 
 
-            // 🛑 REMOVED RECURSIVE CALL: await fetchAndDisplayAllTerminals(); 
-
             // --- Terminal Tools Visibility Check ---
             const routeIds = allTerminals.map(t => t.route_id).filter(id => id);
             const hasRoutes = routeIds.length > 0;
@@ -1222,6 +1271,7 @@
 
             if (loggedIn) {
                 const isDriver = currentUserRole === 'driver';
+                const isViewer = currentUserRole === 'viewer';
                 
                 document.getElementById('role-setup-container').style.display = 'block';
 
@@ -1248,23 +1298,37 @@
                         floatingTrackingBtn.disabled = true;
                     }
 
-                } else { 
+                } else if (isViewer) { 
                     document.getElementById('driver-vehicle-selection').style.display = 'none';
                     document.getElementById('vehicle-registration-collapsible').style.display = 'none'; 
                     sharerRouteControl.style.display = 'none';
-                    identifyNearbyRoutes(); 
                     
-                    if (currentPlateNumber) {
-                        passengerSeatReportForm.style.display = 'block';
-                        statusDiv.textContent = `Viewing Plate No. ${currentPlateNumber}.`;
+                    if (isSharingBeacon) {
+                        viewerSelectionContainer.style.display = 'none';
+                        passengerSeatReportForm.style.display = 'none';
+                        statusDiv.textContent = `Sharing ON as Passenger Beacon.`;
+                        statusDiv.style.color = '#ff5722'; // Orange/Red for beacon
                     } else {
-                         statusDiv.textContent = 'Logged in as Viewer/Passenger. Select a vehicle to track.';
-                         statusDiv.style.color = '#007bff';
+                         viewerSelectionContainer.style.display = 'block'; 
+                         identifyNearbyRoutes();
+                         
+                        // Check if the currentPlateNumber is set and is NOT a beacon
+                         if (currentPlateNumber && !currentPlateNumber.startsWith('user-')) {
+                            passengerSeatReportForm.style.display = 'block';
+                            statusDiv.textContent = `Viewing Plate No. ${currentPlateNumber}.`;
+                         } else {
+                            // If user was sharing beacon and stopped, currentPlateNumber is null
+                            statusDiv.textContent = 'Viewer/Passenger: Start sharing (Beacon) or select vehicle to track.';
+                            statusDiv.style.color = '#007bff';
+                         }
                     }
                     
-                    floatingTrackingBtn.disabled = true;
-                    floatingTrackingBtn.style.backgroundColor = '#6c757d'; 
-                    floatingTrackingBtn.textContent = '🚫';
+                    floatingTrackingBtn.disabled = false; // Always enabled for Viewers now
+                } else {
+                     // Default/Admin (No specific sharing controls)
+                      floatingTrackingBtn.disabled = true;
+                      floatingTrackingBtn.style.backgroundColor = '#6c757d'; 
+                      floatingTrackingBtn.textContent = '🚫';
                 }
 
                 // --- Floating Button State (Visual only) ---
@@ -1272,10 +1336,12 @@
                     floatingTrackingBtn.classList.remove('share-btn');
                     floatingTrackingBtn.classList.add('stop-btn');
                     floatingTrackingBtn.textContent = '■';
-                } else if (isDriver && currentPlateNumber) {
+                    floatingTrackingBtn.style.backgroundColor = '#dc3545';
+                } else if (loggedIn && (isDriver && currentPlateNumber) || isViewer) { 
                     floatingTrackingBtn.classList.remove('stop-btn');
                     floatingTrackingBtn.classList.add('share-btn');
                     floatingTrackingBtn.textContent = '▶';
+                    floatingTrackingBtn.style.backgroundColor = '#28a745'; 
                 }
 
             } else {
@@ -1286,26 +1352,46 @@
         }
 
         // --- LOCATION SHARING/PINGING LOGIC ---
-        function toggleLocationSharing() {
-            if (!currentUserRole || currentUserRole === 'viewer' || !currentPlateNumber) {
-                alert("Please set your role as 'Driver' and select a registered vehicle before sharing location.");
+        async function toggleLocationSharing() {
+            const userSession = await supabaseClient.auth.getUser();
+            const userId = userSession.data.user?.id;
+            
+            if (!currentUserRole || !userId) {
+                alert("Please log in and set your role before sharing location.");
                 return;
             }
+            
+            if (currentUserRole === 'driver' && !currentPlateNumber) {
+                 alert("Please select a registered vehicle before sharing location.");
+                 return;
+            }
+
             if (isTracking) {
                 stopLocationSharing();
             } else {
-                startLocationSharing();
+                startLocationSharing(userId);
             }
         }
 
-        function startLocationSharing() {
+        function startLocationSharing(userId) {
             if (!navigator.geolocation) {
                 alert('Geolocation is not supported by this browser.');
                 return;
             }
             
-            if (currentVehicleCapacity === null) {
-                alert("Please select a vehicle first."); return;
+            const isDriver = currentUserRole === 'driver';
+
+            if (isDriver) {
+                isSharingBeacon = false;
+            } else { // Viewer/Passenger Role
+                isSharingBeacon = true;
+                currentPlateNumber = `user-${userId}`; // Unique ID for passenger beacon
+                currentVehicleType = 'Passenger Beacon';
+                currentVehicleCapacity = 1; // Used for location sharing payload (occupied/empty)
+                occupiedSeats = 1; 
+                
+                // Hide viewer tracking controls when sharing beacon
+                viewerSelectionContainer.style.display = 'none';
             }
 
             statusDiv.textContent = `Attempting to start location sharing...`;
@@ -1318,7 +1404,10 @@
                 floatingTrackingBtn.classList.add('stop-btn');
                 floatingTrackingBtn.textContent = '■';
                 floatingTrackingBtn.disabled = false;
-                onMapControls.style.display = 'flex'; 
+                
+                if (isDriver) {
+                    onMapControls.style.display = 'flex'; 
+                }
                 
                 updateLocationInSupabase(position); 
 
@@ -1326,6 +1415,8 @@
                     navigator.geolocation.getCurrentPosition(updateLocationInSupabase, handleGeolocationError, options);
                 }, PING_RATE_MS);
             }, handleGeolocationError, options);
+            
+            updateUI(userId); // Refresh UI to reflect isTracking = true
         }
 
         function stopLocationSharing() {
@@ -1334,36 +1425,44 @@
                 clearInterval(intervalID);
                 intervalID = null;
             }
+            
+            // Mark the location inactive in the database
+            if (currentPlateNumber) {
+                markRouteAsInactive(currentPlateNumber); 
+                
+                // Cleanup passenger-specific state
+                if (isSharingBeacon) {
+                    currentPlateNumber = null; 
+                    isSharingBeacon = false;
+                    currentVehicleType = null;
+                    currentVehicleCapacity = null;
+                    occupiedSeats = 0;
+                    updateUI(supabaseClient.auth.getUser().data.user?.id); // Refresh UI to show viewer options
+                }
+            }
+            
             floatingTrackingBtn.classList.remove('stop-btn');
             floatingTrackingBtn.classList.add('share-btn');
             floatingTrackingBtn.textContent = '▶';
             onMapControls.style.display = 'none'; 
-            statusDiv.textContent = `Location sharing stopped for ${currentPlateNumber}.`;
+            statusDiv.textContent = `Location sharing stopped.`;
             statusDiv.style.color = '#dc3545';
             clearDisplayedRoute();
-            
-            markRouteAsInactive();
             
             currentTrip = { isTrackingTrip: false, startPoint: null, lastStop: null, stopTimer: null, identifiedStartTerminal: null, identifiedEndTerminal: null };
         }
 
-        async function markRouteAsInactive() {
+        async function markRouteAsInactive(plateOrUserId) {
+            // Note: This only marks the active_routes table entry inactive.
+            // Vehicle location data remains for history/tracking via vehicle_location table.
             const { error } = await supabaseClient
                 .from('active_routes')
                 .update({ is_active: false })
-                .eq('plate_number', currentPlateNumber); 
+                .eq('plate_number', plateOrUserId); 
             
             if (error) console.error("Error marking route inactive:", error);
         }
 
-        function handleGeolocationError(error) {
-            console.error('Geolocation Error:', error);
-            statusDiv.textContent = `GPS Error: ${error.message}. Sharing stopped.`;
-            statusDiv.style.color = '#dc3545';
-            stopLocationSharing();
-        }
-
-        // *** CRITICAL FIX: UPDATED HEADING LOGIC ***
         async function updateLocationInSupabase(position) {
             const userSession = await supabaseClient.auth.getUser();
             const userId = userSession.data.user?.id;
@@ -1372,11 +1471,9 @@
                 console.error("User ID missing. Cannot share location.");
                 statusDiv.textContent = "ERROR: User ID missing. Log out and back in.";
                 statusDiv.style.color = '#dc3545';
+                stopLocationSharing();
                 return;
             }
-            
-            const emptySeats = currentVehicleCapacity - occupiedSeats;
-            const totalPassengers = occupiedSeats; 
             
             const { latitude: rawLat, longitude: rawLon, speed, heading, accuracy } = position.coords;
             const { lat, lon } = simpleSnap(rawLat, rawLon, accuracy);
@@ -1392,35 +1489,57 @@
                 finalHeading = deviceOrientationHeading || 0;
             }
             
+            // --- Payload Construction ---
+            const isDriver = currentUserRole === 'driver';
+            let payload = {
+                plate_number: currentPlateNumber, 
+                sharer_user_id: userId,          
+                latitude: lat,
+                longitude: lon,
+                speed: speedKPH / 3.6, // Store speed in m/s as per W3C spec
+                heading: finalHeading,
+                accuracy: accuracy,
+                vehicle_type: currentVehicleType, 
+                last_updated: new Date().toISOString()
+            };
+            
+            if (isDriver) {
+                // Driver specific fields
+                const emptySeats = currentVehicleCapacity - occupiedSeats;
+                const totalPassengers = occupiedSeats; 
+                payload.empty_seats = emptySeats;         
+                payload.total_passengers = totalPassengers; 
+            } else if (isSharingBeacon) {
+                 // Passenger Beacon specific fields (Default to 1 occupied, 0 empty)
+                payload.empty_seats = 0;         
+                payload.total_passengers = 1; 
+            } else {
+                console.error("Invalid sharing state.");
+                return;
+            }
+            
             const { error } = await supabaseClient
                 .from('vehicle_location')
-                .upsert({
-                    plate_number: currentPlateNumber, 
-                    sharer_user_id: userId,          
-                    latitude: lat,
-                    longitude: lon,
-                    speed: speedKPH / 3.6, // Store speed in m/s as per W3C spec
-                    heading: finalHeading,
-                    accuracy: accuracy,
-                    vehicle_type: currentVehicleType, 
-                    empty_seats: emptySeats,         
-                    total_passengers: totalPassengers, 
-                    last_updated: new Date().toISOString()
-                }, { on_conflict: 'plate_number' }); 
+                .upsert(payload, { on_conflict: 'plate_number' }); 
 
             if (error) {
                 console.error("Supabase update/insert error:", error);
                 statusDiv.textContent = `ERROR: Data not shared. ${error.message.substring(0, 50)}...`;
                 statusDiv.style.color = '#dc3545';
             } else {
-                statusDiv.textContent = `Sharing ON. Plate: ${currentPlateNumber} | Speed: ${speedKPH.toFixed(1)} km/h | Occupied: ${occupiedSeats}`;
-                statusDiv.style.color = getSpeedColor(speedKPH / 3.6);
+                 if (isSharingBeacon) {
+                    statusDiv.textContent = `Beacon ON. Speed: ${speedKPH.toFixed(1)} km/h.`;
+                    statusDiv.style.color = '#ff5722';
+                 } else {
+                    statusDiv.textContent = `Sharing ON. Plate: ${currentPlateNumber} | Speed: ${speedKPH.toFixed(1)} km/h | Occupied: ${occupiedSeats}`;
+                    statusDiv.style.color = getSpeedColor(speedKPH / 3.6);
+                 }
             }
         }
 
         // --- NEW DRIVER SEAT CONTROL FUNCTIONS ---
         function updateOccupiedSeats(delta) {
-            if (!isTracking && !currentPlateNumber) return;
+            if (!isTracking || isSharingBeacon || !currentPlateNumber) return;
 
             let newOccupied = occupiedSeats + delta;
 
@@ -1433,7 +1552,7 @@
         }
 
         function submitDriverSeatUpdate() {
-            if (!isTracking || !currentPlateNumber) {
+            if (!isTracking || isSharingBeacon || !currentPlateNumber) {
                 alert("Location sharing must be active to update seats.");
                 return;
             }
@@ -1468,6 +1587,11 @@
                 alert("Please select a vehicle before setting a route.");
                 return;
             }
+            
+            if (isSharingBeacon) {
+                alert("Cannot set a route while sharing as a Passenger Beacon.");
+                return;
+            }
 
             const startId = startTerminalSelect.value;
             const endId = endTerminalSelect.value;
@@ -1494,9 +1618,7 @@
                     .from('active_routes')
                     .upsert({
                         plate_number: currentPlateNumber,
-                        // === FIX APPLIED HERE ===
                         tracking_id: currentPlateNumber, 
-                        // =========================
                         route_id: startTerminal.route_id,
                         is_active: true,
                         start_lat: startTerminal.latitude,
@@ -1572,7 +1694,9 @@
         drawManualRouteButton.addEventListener('click', drawManualRoute);
         clearManualRouteButton.addEventListener('click', () => {
              clearDisplayedRoute();
-             markRouteAsInactive();
+             if (currentPlateNumber) {
+                 markRouteAsInactive(currentPlateNumber);
+             }
              statusDiv.textContent = `Manual route cleared.`;
              statusDiv.style.color = '#dc3545';
         });
@@ -1597,4 +1721,5 @@
     </script>
 </body>
 </html>
+
 
