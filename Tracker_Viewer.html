@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚌 Secure Transport Sharer & Viewer a0.402</title>
+    <title>🚌 Secure Transport Sharer & Viewer a0.403</title>
 
     <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
     <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
@@ -352,14 +352,7 @@
                             <button id="submitSeatReportBtn" style="background-color: #007bff; color: white;">Submit</button>
                         </div>
                     </div>
-
-                    <div id="passenger-pinning-form" style="margin-top: 15px; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
-                        <h5>Report Current Location</h5>
-                        <button id="dropPinPassengerButton" class="share-btn">📌 Click Map to Pin Location</button>
-                        <div id="passenger-pin-location-display" style="font-style: italic; color: #555; text-align: center;"></div>
-                        <button id="savePassengerPinButton" class="share-btn" disabled>💾 Save Pinned Location</button>
-                    </div>
-                    </div>
+                </div>
 
                 <div id="sharer-route-control" class="controls" style="flex-direction: column; align-items: stretch; gap: 10px; display: none;">
                     <h4>Manual Route Setting</h4>
@@ -435,10 +428,10 @@
 
         // --- GLOBAL STATE & IDS ---
         let intervalID = null; 
+        let inactivityTimeoutID = null; // **NEW**: Timeout ID for 5-minute inactivity check
         let isTracking = false;
         const activeMarkers = new Map(); 
         const activeTerminalMarkers = new Map(); 
-        const activePassengerMarkers = new Map(); // NEW: For displaying other passenger locations
         let currentPlateNumber = null; 
         let currentVehicleType = null;
         let currentVehicleCapacity = null; 
@@ -449,11 +442,6 @@
         let isPinningMode = false;
         let tempTerminalMarker = null;
         let tempPinLocation = null;
-        // NEW PASSENGER PINNING STATE
-        let isPassengerPinningMode = false; 
-        let tempPassengerPinLocation = null;
-        let tempPassengerMarker = null;
-
         const TRIP_ROUTE_SOURCE_ID = 'trip-route-source';
         const TRIP_ROUTE_LAYER_ID = 'trip-route-layer';
         let deviceOrientationHeading = null; 
@@ -516,10 +504,6 @@
         const submitSeatReportBtn = document.getElementById('submitSeatReportBtn');
         const passengerSeatReportForm = document.getElementById('passenger-seat-report-form');
 
-        // NEW PASSENGER PINNING CONTROLS
-        const dropPinPassengerButton = document.getElementById('dropPinPassengerButton');
-        const savePassengerPinButton = document.getElementById('savePassengerPinButton');
-        const passengerPinLocationDisplay = document.getElementById('passenger-pin-location-display');
         
         // SHARER CONTROLS
         const startTerminalSelect = document.getElementById('startTerminalSelect');
@@ -577,7 +561,7 @@
             }; 
         }
 
-        // --- MAPBOX & MARKER DISPLAY ---
+        // --- MAPBOX & TERMINAL DISPLAY ---
         function updateMarker(data) {
             const plateNumber = data.plate_number;
             if (!data.latitude || !data.longitude || !plateNumber) return; 
@@ -634,39 +618,6 @@
             }
         }
 
-        // NEW: Function to update passenger location markers
-        function updatePassengerMarker(data) {
-            const userId = data.user_id;
-            if (!data.latitude || !data.longitude || !userId) return; 
-            const newLngLat = [data.longitude, data.latitude];
-            
-            let marker = activePassengerMarkers.get(userId);
-            
-            if (!marker) {
-                const el = document.createElement('div');
-                el.className = 'terminal-marker'; 
-                el.textContent = '🧍'; // Person/Passenger icon
-                el.style.backgroundColor = '#6f42c1'; // Purple color for distinctiveness
-                el.style.fontSize = '12px';
-                el.style.width = '25px';
-                el.style.height = '25px';
-                marker = new mapboxgl.Marker({ element: el, anchor: 'center' }) 
-                    .setLngLat(newLngLat)
-                    .setPopup(new mapboxgl.Popup({ offset: 25 })) 
-                    .addTo(map);
-                activePassengerMarkers.set(userId, marker);
-            }
-            
-            marker.setLngLat(newLngLat)
-                     .getPopup()
-                    .setHTML(`
-                        <h4>Passenger Location</h4>
-                        <p>Last Update: ${new Date(data.last_updated).toLocaleTimeString()}</p>
-                        <p>Accuracy: ${data.accuracy ? data.accuracy.toFixed(1) + 'm' : 'N/A'}</p>
-                    `);
-        }
-        // END NEW PASSENGER MARKER FUNCTION
-        
         async function fetchAndDisplayAllTerminals() {
             const { data, error } = await supabaseClient.from('terminals').select('*');
             if (error) { console.error('Error fetching terminals:', error.message); return; }
@@ -779,18 +730,6 @@
                     }
                 })
                 .subscribe();
-
-            // NEW: Subscribe to passenger location updates
-            supabaseClient.channel('all_passenger_locations') 
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'passenger_location' }, (payload) => {
-                    if (payload.new) updatePassengerMarker(payload.new);
-                    if (payload.eventType === 'DELETE') {
-                         const marker = activePassengerMarkers.get(payload.old.user_id);
-                         if (marker) marker.remove();
-                         activePassengerMarkers.delete(payload.old.user_id);
-                    }
-                })
-                .subscribe();
         }
 
         // --- MAP INITIALIZATION ---
@@ -815,10 +754,6 @@
              
              // ✅ INITIAL TERMINAL LOAD - ONLY ONCE
              await fetchAndDisplayAllTerminals(); 
-
-             // NEW: Initial Passenger Location Load
-             const { data: passengerData } = await supabaseClient.from('passenger_location').select('*');
-             if (passengerData) passengerData.forEach(updatePassengerMarker);
              
              subscribeToLocationUpdates(); 
         });
@@ -843,44 +778,31 @@
                 mapCanvas.style.cursor = '';
                 clearTempPin();
             }
-             // Ensure passenger pinning mode is off
-            if (isPassengerPinningMode) togglePassengerPinningMode();
         }
 
         function handleMapClick(e) {
-            if (isPinningMode) { // DRIVER: Terminal Pinning
-                clearTempPin();
-                const lat = e.lngLat.lat;
-                const lon = e.lngLat.lon;
-                tempPinLocation = { lat: lat, lon: lon };
-                const el = document.createElement('div');
-                el.className = 'terminal-marker';
-                el.textContent = '?'; 
-                el.style.backgroundColor = '#ffc107'; 
-                tempTerminalMarker = new mapboxgl.Marker({ element: el, anchor: 'center' })
-                    .setLngLat([lon, lat]) // FIX HERE: [longitude, latitude]
-                    .addTo(map);
-                document.getElementById('pin-location-display').textContent = `Pin Dropped at: Lat ${lat.toFixed(4)}, Lon ${lon.toFixed(4)}`;
-                document.getElementById('savePinButton').disabled = false;
-
-            } else if (isPassengerPinningMode) { // PASSENGER: Location Pinning
-                clearTempPassengerPin();
-                const lat = e.lngLat.lat;
-                const lon = e.lngLat.lon;
-                tempPassengerPinLocation = { lat: lat, lon: lon };
-                
-                // Create a distinctive marker for the passenger pin
-                const el = document.createElement('div');
-                el.className = 'terminal-marker'; // Re-use style
-                el.textContent = 'P'; // 'P' for Passenger Pin
-                el.style.backgroundColor = '#6f42c1'; // Purple color for distinctiveness
-                tempPassengerMarker = new mapboxgl.Marker({ element: el, anchor: 'center' })
-                    .setLngLat([lon, lat]) 
-                    .addTo(map);
-
-                passengerPinLocationDisplay.textContent = `Pin Dropped at: Lat ${lat.toFixed(4)}, Lon ${lon.toFixed(4)}`;
-                savePassengerPinButton.disabled = false;
+            if (!isPinningMode) return;
+            clearTempPin();
+            const lat = e.lngLat.lat;
+            const lon = e.lngLat.lon;
+            
+            // **FIX**: Prevent crash if coordinates are invalid (NaN)
+            if (isNaN(lat) || isNaN(lon)) {
+                console.error("Map click resulted in invalid coordinates (NaN).", e.lngLat);
+                alert("Could not get valid coordinates from map click. Please try again.");
+                return;
             }
+            
+            tempPinLocation = { lat: lat, lon: lon };
+            const el = document.createElement('div');
+            el.className = 'terminal-marker';
+            el.textContent = '?'; 
+            el.style.backgroundColor = '#ffc107'; 
+            tempTerminalMarker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+                .setLngLat([lon, lat]) 
+                .addTo(map);
+            document.getElementById('pin-location-display').textContent = `Pin Dropped at: Lat ${lat.toFixed(4)}, Lon ${lon.toFixed(4)}`;
+            document.getElementById('savePinButton').disabled = false;
         }
 
         function clearTempPin() {
@@ -934,70 +856,6 @@
                 // Note: The Supabase subscription will automatically trigger fetchAndDisplayAllTerminals()
             }
         }
-
-        // NEW: Passenger Pinning Logic
-        function togglePassengerPinningMode() {
-            isPassengerPinningMode = !isPassengerPinningMode;
-            const mapCanvas = map.getCanvasContainer();
-            if (isPassengerPinningMode) {
-                dropPinPassengerButton.textContent = '❌ Cancel Pin Drop';
-                dropPinPassengerButton.classList.remove('share-btn');
-                dropPinPassengerButton.classList.add('stop-btn');
-                passengerPinLocationDisplay.textContent = 'Pin Drop mode is ON. Click map to place your location.';
-                mapCanvas.style.cursor = 'crosshair';
-                toggleSidebar(); 
-            } else {
-                dropPinPassengerButton.textContent = '📌 Click Map to Pin Location';
-                dropPinPassengerButton.classList.remove('stop-btn');
-                dropPinPassengerButton.classList.add('share-btn');
-                mapCanvas.style.cursor = '';
-                clearTempPassengerPin();
-            }
-            // Ensure driver's terminal pinning mode is off
-            if (isPinningMode) togglePinningMode();
-        }
-
-        function clearTempPassengerPin() {
-            if (tempPassengerMarker) {
-                tempPassengerMarker.remove();
-                tempPassengerMarker = null;
-            }
-            tempPassengerPinLocation = null;
-            passengerPinLocationDisplay.textContent = '';
-            savePassengerPinButton.disabled = true;
-        }
-
-        async function savePinnedPassengerLocation() {
-            const userSession = await supabaseClient.auth.getUser();
-            const userId = userSession.data.user?.id;
-            
-            if (!userId) { alert("You must be logged in to save location!"); return; }
-            if (!tempPassengerPinLocation) { alert("No pin dropped. Click the map first!"); return; }
-
-            statusDiv.textContent = `Saving passenger location...`;
-            
-            // Note: Manual pin provides low confidence (high numerical accuracy value)
-            const { error } = await supabaseClient
-                .from('passenger_location')
-                .upsert({
-                    user_id: userId, 
-                    latitude: tempPassengerPinLocation.lat,
-                    longitude: tempPassengerPinLocation.lon,
-                    accuracy: 50, // Arbitrary accuracy for manual pin
-                    last_updated: new Date().toISOString()
-                }, { onConflict: 'user_id' }); 
-
-            if (error) {
-                console.error('Passenger location save error:', error);
-                statusDiv.textContent = `ERROR saving location: ${error.message}`;
-                statusDiv.style.color = '#dc3545';
-            } else {
-                statusDiv.textContent = `Successfully saved your pinned location!`;
-                statusDiv.style.color = '#28a745';
-            }
-            togglePassengerPinningMode(); 
-        }
-        // END NEW PASSENGER PINNING LOGIC
         
         // --- VEHICLE MANAGEMENT FUNCTIONS ---
         async function fetchDriverVehicles(userId) {
@@ -1095,7 +953,7 @@
         
         function identifyNearbyRoutes() {
             viewerSelectionContainer.style.display = 'block';
-            // passengerSeatReportForm.style.display = 'none'; // Keep visible if a vehicle is selected
+            passengerSeatReportForm.style.display = 'none'; 
             routeToTrackSelect.innerHTML = '<option value="">-- Searching for Nearby Stops/Stations... --</option>';
             if (!navigator.geolocation) {
                 routeToTrackSelect.innerHTML = '<option value="">Geolocation not supported.</option>';
@@ -1275,6 +1133,9 @@
             occupiedSeats = 0; 
             onMapControls.style.display = 'none'; 
             if (intervalID) clearInterval(intervalID);
+            // **NEW**: Clear inactivity timer on sign out
+            if (inactivityTimeoutID) clearTimeout(inactivityTimeoutID);
+            inactivityTimeoutID = null;
             updateUI(null);
             clearDisplayedRoute();
         }
@@ -1433,8 +1294,60 @@
                 statusDiv.textContent = 'Login Required.';
                 statusDiv.style.color = '#dc3545';
                 if (intervalID) { clearInterval(intervalID); intervalID = null; }
+                // **NEW**: Clear inactivity timer on log out
+                if (inactivityTimeoutID) { clearTimeout(inactivityTimeoutID); inactivityTimeoutID = null; }
             }
         }
+
+        // --- NEW INACTIVITY TIMEOUT LOGIC ---
+        function resetInactivityTimer() {
+            if (inactivityTimeoutID) {
+                clearTimeout(inactivityTimeoutID);
+            }
+            // 5 minutes = 300,000 milliseconds
+            inactivityTimeoutID = setTimeout(handleInactivityTimeout, 300000); 
+            console.log("Inactivity timer reset.");
+        }
+
+        function handleInactivityTimeout() {
+            if (!isTracking) {
+                inactivityTimeoutID = null;
+                return;
+            } 
+
+            // Stop the periodic pings immediately to avoid race conditions
+            if (intervalID) {
+                clearInterval(intervalID);
+                intervalID = null;
+            }
+
+            // Prompt the user to continue
+            const isStillWaiting = confirm("Are you still sharing your location? Click OK to continue sharing for another 5 minutes, or Cancel to stop sharing.");
+
+            if (isStillWaiting) {
+                // User confirmed, attempt to update location once
+                statusDiv.textContent = 'Continuing sharing...';
+                const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
+                navigator.geolocation.getCurrentPosition(position => {
+                    updateLocationInSupabase(position);
+                    
+                    // Restart the periodic pings
+                    intervalID = setInterval(() => {
+                        navigator.geolocation.getCurrentPosition(updateLocationInSupabase, handleGeolocationError, options);
+                    }, PING_RATE_MS);
+                    
+                    // The updateLocationInSupabase function will call resetInactivityTimer upon success
+                }, (err) => {
+                    // Handle error on immediate position fetch and stop sharing
+                    console.error("Geolocation Error on inactivity check:", err);
+                    handleGeolocationError(err);
+                }, options);
+            } else {
+                // User canceled, stop sharing completely
+                stopLocationSharing();
+            }
+        }
+        // --- END NEW INACTIVITY TIMEOUT LOGIC ---
 
         // --- LOCATION SHARING/PINGING LOGIC ---
         function toggleLocationSharing() {
@@ -1476,6 +1389,10 @@
                 intervalID = setInterval(() => {
                     navigator.geolocation.getCurrentPosition(updateLocationInSupabase, handleGeolocationError, options);
                 }, PING_RATE_MS);
+                
+                // **NEW**: Start the inactivity timer
+                resetInactivityTimer(); 
+
             }, handleGeolocationError, options);
         }
 
@@ -1484,6 +1401,11 @@
             if (intervalID) {
                 clearInterval(intervalID);
                 intervalID = null;
+            }
+            // **NEW**: Clear the inactivity timer
+            if (inactivityTimeoutID) {
+                clearTimeout(inactivityTimeoutID);
+                inactivityTimeoutID = null;
             }
             floatingTrackingBtn.classList.remove('stop-btn');
             floatingTrackingBtn.classList.add('share-btn');
@@ -1566,6 +1488,9 @@
             } else {
                 statusDiv.textContent = `Sharing ON. Plate: ${currentPlateNumber} | Speed: ${speedKPH.toFixed(1)} km/h | Occupied: ${occupiedSeats}`;
                 statusDiv.style.color = getSpeedColor(speedKPH / 3.6);
+                
+                // **NEW**: Reset the inactivity timer on successful ping/update
+                resetInactivityTimer(); 
             }
         }
 
@@ -1734,11 +1659,6 @@
         // PASSENGER SEAT REPORT LISTENER
         submitSeatReportBtn.addEventListener('click', submitSeatReport);
 
-        // NEW PASSENGER PINNING LISTENERS
-        dropPinPassengerButton.addEventListener('click', togglePassengerPinningMode);
-        savePassengerPinButton.addEventListener('click', savePinnedPassengerLocation);
-
-
         // Initial check on page load
         supabaseClient.auth.getSession().then(({ data: { session } }) => {
             if (session) {
@@ -1750,3 +1670,4 @@
     </script>
 </body>
 </html>
+
