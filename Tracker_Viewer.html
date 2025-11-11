@@ -144,6 +144,8 @@
             z-index: 100; /* Ensure it's above everything */
             transition: background-color 0.2s, transform 0.1s;
             display: none; /* Hidden by default until logged in */
+            line-height: 60px; /* Center icon vertically */
+            text-align: center;
         }
         #floating-tracking-btn:active {
             transform: scale(0.95);
@@ -809,14 +811,12 @@
                 return;
             }
 
-            // Note: role and tracking_id are *not* provided here. 
-            // The SQL trigger must be updated to handle these missing values (e.g., set role='viewer' and tracking_id=NULL).
+            // Note: role and tracking_id are provided as defaults for the SQL trigger. 
             const { error: authError } = await supabaseClient.auth.signUp({ 
                 email, 
                 password,
                 options: {
                     data: { full_name: name, role: 'viewer', tracking_id: null } 
-                    // Set default metadata here for the trigger
                 }
             });
 
@@ -826,7 +826,6 @@
             }
             
             alert('Account created! Please check your email for a confirmation link.');
-            // Switch back to login view
             showLoginLink.click();
         }
 
@@ -844,7 +843,10 @@
             clearDisplayedRoute();
         }
 
-        async function saveUserRoleSetup(userId) {
+        async function saveUserRoleSetup() {
+            const userId = (await supabaseClient.auth.getUser()).data.user?.id;
+            if (!userId) return;
+
             const newRole = userRoleSelect.value;
             const newTrackingId = setupTrackingIdInput.value.toUpperCase();
 
@@ -852,27 +854,35 @@
                 alert("Please select a role.");
                 return;
             }
-            if (newRole === 'driver' && !newTrackingId) {
+            if (newRole === 'driver' && (!newTrackingId || newTrackingId.trim() === '')) {
                 alert("Drivers must provide a Plate Number.");
                 return;
             }
 
+            const finalTrackingId = newRole === 'driver' ? newTrackingId : null;
+            
+            // --- CRITICAL UPDATE BLOCK ---
             const { error } = await supabaseClient
                 .from('user_profiles') 
                 .update({ 
                     role: newRole, 
-                    tracking_id: newRole === 'driver' ? newTrackingId : null // Clear tracking ID if viewer
+                    tracking_id: finalTrackingId
                 })
                 .eq('id', userId);
 
             if (error) {
-                alert(`Error saving role: ${error.message}`);
+                // *** ENHANCED ERROR REPORTING ***
+                alert(`Error saving role! The database rejected the update. Check RLS or Permissions. Error details: ${error.message}`);
                 console.error("Error saving profile:", error);
             } else {
                 alert(`Role saved as ${newRole}.`);
-                // Force UI update to refresh new role and tracking ID
-                await checkUserRole(userId);
-                updateUI(userId);
+                
+                // Update local state and UI after successful save
+                currentUserRole = newRole;
+                currentTrackingId = finalTrackingId;
+                currentVehicleType = finalTrackingId ? finalTrackingId.split('-')[0] : 'vehicle'; 
+
+                updateUI(userId); // Refresh UI based on new state
                 toggleSidebar();
             }
         }
@@ -889,14 +899,21 @@
                 .eq('id', userId)
                 .single();
 
-            if (error) {
+            if (error && error.message.includes('0 rows')) { 
+                // Expected scenario for brand new users or delayed trigger
+                console.warn("Profile not found immediately. Assigning temporary 'viewer' role.");
+                currentUserRole = 'viewer'; 
+            } else if (error) {
                 console.error("Error fetching profile:", error);
-                // If profile fetch fails, assume viewer but keep the ID as null
                 currentUserRole = 'viewer'; 
             } else {
                 currentUserRole = data.role;
                 currentTrackingId = data.tracking_id;
                 currentVehicleType = data.tracking_id ? data.tracking_id.split('-')[0] : 'vehicle'; 
+                // Pre-select the role/tracking ID in the setup fields
+                userRoleSelect.value = data.role || '';
+                setupTrackingIdInput.value = data.tracking_id || '';
+                setupTrackingIdInput.style.display = (data.role === 'driver' && data.tracking_id) ? 'block' : 'none';
             }
 
              console.log(`User role set to: ${currentUserRole}`);
@@ -919,36 +936,33 @@
 
             if (loggedIn) {
                 const isDriver = currentUserRole === 'driver';
-                const needsSetup = !currentUserRole || currentUserRole === 'viewer' && !currentTrackingId;
+                const hasTrackingId = !!currentTrackingId;
 
-                // --- Sidebar Controls ---
-                if (needsSetup) {
-                    // Show role setup for new users or viewers who haven't set an ID
-                    document.getElementById('role-setup-container').style.display = 'block';
-                    viewerSelectionContainer.style.display = 'none';
-                    sharerRouteControl.style.display = 'none';
-                    statusDiv.textContent = 'Account Setup Required.';
-                    statusDiv.style.color = '#dc3545';
-                    floatingTrackingBtn.disabled = true;
-                    floatingTrackingBtn.style.backgroundColor = '#6c757d'; // Greyed out
-                    floatingTrackingBtn.textContent = '🚫';
-                } else if (isDriver) {
-                    // Driver controls
-                    document.getElementById('role-setup-container').style.display = 'block'; // Still available for role change
+                // --- Sidebar Controls visibility based on role ---
+                document.getElementById('role-setup-container').style.display = 'block';
+
+                if (isDriver && hasTrackingId) {
+                    // Driver (Ready to share)
                     viewerSelectionContainer.style.display = 'none';
                     sharerRouteControl.style.display = 'flex';
                     statusDiv.textContent = `Ready to Share: ${currentTrackingId}`;
                     statusDiv.style.color = '#28a745';
                     floatingTrackingBtn.disabled = false;
-                } else { // Viewer role
-                    // Viewer controls
-                    document.getElementById('role-setup-container').style.display = 'block'; // Still available for role change
+                } else { 
+                    // Viewer or Driver lacking a Plate Number (needs setup/tracking other)
                     sharerRouteControl.style.display = 'none';
-                    identifyNearbyRoutes(); // Populates viewerSelectionContainer
-                    statusDiv.textContent = 'Logged in as Viewer/Passenger.';
-                    statusDiv.style.color = '#007bff';
+                    identifyNearbyRoutes(); 
+                    
+                    if (currentUserRole === 'viewer') {
+                        statusDiv.textContent = 'Logged in as Viewer/Passenger. Select a vehicle to track.';
+                        statusDiv.style.color = '#007bff';
+                    } else if (currentUserRole === 'driver' && !hasTrackingId) {
+                        statusDiv.textContent = 'Driver: Set Plate Number in Account Setup.';
+                        statusDiv.style.color = '#dc3545';
+                    }
+                    
                     floatingTrackingBtn.disabled = true;
-                    floatingTrackingBtn.style.backgroundColor = '#6c757d'; 
+                    floatingTrackingBtn.style.backgroundColor = '#6c757d'; // Greyed out
                     floatingTrackingBtn.textContent = '🚫';
                 }
 
@@ -957,12 +971,12 @@
                     terminalToolsContainer.style.display = 'block';
                 }
                 
-                // --- Floating Button State ---
+                // --- Floating Button State (Visual only) ---
                 if (isTracking) {
                     floatingTrackingBtn.classList.remove('share-btn');
                     floatingTrackingBtn.classList.add('stop-btn');
                     floatingTrackingBtn.textContent = '■';
-                } else {
+                } else if (isDriver && hasTrackingId) {
                     floatingTrackingBtn.classList.remove('stop-btn');
                     floatingTrackingBtn.classList.add('share-btn');
                     floatingTrackingBtn.textContent = '▶';
@@ -1168,10 +1182,7 @@
                 setupTrackingIdInput.value = ''; // Clear if switching to viewer
             }
         });
-        saveRoleButton.addEventListener('click', () => {
-            const userId = supabaseClient.auth.getUser()?.id;
-            if (userId) saveUserRoleSetup(userId);
-        });
+        saveRoleButton.addEventListener('click', saveUserRoleSetup);
 
         document.getElementById('dropPinButton').addEventListener('click', togglePinningMode);
         document.getElementById('savePinButton').addEventListener('click', savePinnedTerminal);
