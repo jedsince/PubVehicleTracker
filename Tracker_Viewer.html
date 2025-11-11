@@ -540,7 +540,7 @@
                 .subscribe();
         }
 
-        // --- MAP INITIALIZATION (Unchanged) ---
+        // --- MAP INITIALIZATION ---
         const map = new mapboxgl.Map({
             container: 'map',
             style: 'mapbox://styles/mapbox/streets-v12',
@@ -564,7 +564,6 @@
         });
 
         // --- PINNING AND TERMINAL MANAGEMENT ---
-        // ... (Functions handleMapClick, clearTempPin, savePinnedTerminal, captureAndSaveTerminal, writeTerminalToSupabase remain the same) ...
         function togglePinningMode() {
             isPinningMode = !isPinningMode;
             const button = document.getElementById('dropPinButton');
@@ -655,7 +654,7 @@
             }
         }
 
-        // --- PASSENGER BEACON LOGIC ---
+        // --- PASSENGER BEACON LOGIC (MOVED UP) ---
         
         // 🛑 NEW: Step 1 - Get location and find nearby routes
         function identifyNearbyRoutes() {
@@ -727,7 +726,7 @@
         }
 
 
-        // --- AUTHENTICATION & LOGIN/SIGNUP ---
+        // --- AUTHENTICATION & LOGIN/SIGNUP (MOVED UP) ---
         function toggleForms(showSignup) {
             loginErrorMessageDiv.textContent = ''; // Clear error when switching forms
             if (showSignup) {
@@ -845,6 +844,79 @@
             toggleSidebar(); // Close menu after sign out
         }
         
+        async function initializeSharerSession(user) {
+            // 1. Reset Visibility
+            authContainer.style.display = 'none';
+            signupContainer.style.display = 'none'; 
+            signOutButton.style.display = 'inline-block';
+            sharerControlsContainer.style.display = 'none';
+            terminalToolsContainer.style.display = 'none'; 
+            loginErrorMessageDiv.textContent = ''; 
+            vehicleSelectionContainer.style.display = 'none'; // Default hidden
+
+            // 2. Get Profile Data
+            const { data: profileData, error: profileError } = await supabaseClient
+                .from('user_profiles')
+                .select('role, default_tracking_id')
+                .eq('id', user.id)
+                .single();
+            
+            if (profileError || !profileData) {
+                 statusDiv.textContent = 'Login successful, but user profile not found. Contact Admin.';
+                 statusDiv.style.color = '#dc3545';
+                 return;
+            }
+
+            currentUserRole = profileData.role;
+            currentTrackingId = profileData.default_tracking_id;
+
+            // 3. Determine Controls to Show
+            sharerControlsContainer.style.display = 'block';
+
+            if (currentUserRole === 'driver') {
+                // DRIVER LOGIC: Use default vehicle ID, hide selection controls
+                vehicleSelectionContainer.style.display = 'none'; 
+                
+                if (currentTrackingId) {
+                    toggleButton.disabled = false;
+                    statusDiv.textContent = `Driver logged in as ${currentTrackingId}. Ready to share.`;
+                    currentVehicleType = 'Jeepney'; 
+                    statusDiv.style.color = '#007bff'; 
+                } else {
+                    toggleButton.disabled = true;
+                    statusDiv.textContent = `Driver logged in. ERROR: Vehicle ID missing. Contact Admin.`;
+                    statusDiv.style.color = '#dc3545';
+                }
+            } 
+            
+            else if (currentUserRole === 'sharer_passenger') {
+                // PASSENGER LOGIC: Must select a vehicle, show selection controls
+                vehicleSelectionContainer.style.display = 'block'; 
+                toggleButton.disabled = true; 
+                currentTrackingId = null; 
+                currentVehicleType = 'Jeepney'; 
+
+                statusDiv.textContent = `Passenger logged in. Locating nearby routes...`;
+                statusDiv.style.color = '#ffc107';
+                
+                // 🛑 Start the beacon selection process
+                identifyNearbyRoutes();
+            }
+            
+            else if (currentUserRole === 'admin') {
+                terminalToolsContainer.style.display = 'block'; 
+                toggleButton.disabled = true;
+                sharerControlsContainer.style.display = 'none';
+                statusDiv.textContent = 'Admin logged in. Terminal Tools enabled. Sharing disabled.';
+                statusDiv.style.color = '#ffc107'; 
+            }
+            
+            // Allow admin access to terminal tools if a sharer ID is listed
+            if (ADMIN_SHARER_IDS.includes(user.id)) {
+                terminalToolsContainer.style.display = 'block';
+            }
+        }
+
 
         // --- TRACKING SENDER LOGIC ---
 
@@ -1142,7 +1214,7 @@
         };
 
 
-        // --- INITIAL LOAD CHECK ---
+        // --- INITIAL LOAD CHECK (Still at the bottom, as it initiates the process) ---
         supabaseClient.auth.getSession().then(({ data: { session } }) => {
             if (session) {
                 initializeSharerSession(session.user);
