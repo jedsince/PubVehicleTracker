@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚌 Secure Transport Sharer & Viewer a0.201</title>
+    <title>🚌 Secure Transport Sharer & Viewer a0.3</title>
 
     <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
     <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
@@ -444,7 +444,7 @@
         const TRIP_ROUTE_SOURCE_ID = 'trip-route-source';
         const TRIP_ROUTE_LAYER_ID = 'trip-route-layer';
         let deviceOrientationHeading = null; 
-        let nearbyRoutes = []; 
+        let nearbyRoutes = []; // This variable will now hold active route IDs
 
         // --- DOM Elements & Supabase Client ---
         const sidebarMenu = document.getElementById('sidebar-menu');
@@ -729,6 +729,15 @@
                     }
                 })
                 .subscribe();
+            
+            // Subscribe to active route changes to update the viewer dropdown instantly
+            supabaseClient.channel('active_routes_updates')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'active_routes' }, async (payload) => {
+                    if (currentUserRole === 'viewer') {
+                        await fetchActiveRoutes(); 
+                    }
+                })
+                .subscribe();
         }
 
         // --- MAP INITIALIZATION ---
@@ -947,46 +956,46 @@
             toggleSidebar();
         }
 
-        // --- VIEWER/PASSENGER LOGIC ---
+        // --- VIEWER/PASSENGER LOGIC (UPDATED) ---
         
-        function identifyNearbyRoutes() {
+        // [NEW LOGIC] Function now fetches active routes from the Supabase table, not based on proximity.
+        async function fetchActiveRoutes() {
             viewerSelectionContainer.style.display = 'block';
             passengerSeatReportForm.style.display = 'none'; 
-            routeToTrackSelect.innerHTML = '<option value="">-- Searching for Nearby Stops/Stations... --</option>';
-            if (!navigator.geolocation) {
-                routeToTrackSelect.innerHTML = '<option value="">Geolocation not supported.</option>';
+            routeToTrackSelect.innerHTML = '<option value="">-- Loading Active Routes... --</option>';
+
+            // 1. Query the active_routes table for all active route IDs
+            const { data, error } = await supabaseClient
+                .from('active_routes')
+                .select('route_id')
+                .eq('is_active', true);
+
+            if (error) {
+                console.error("Error fetching active routes:", error);
+                routeToTrackSelect.innerHTML = '<option value="">Error loading active routes.</option>';
                 return;
             }
+            
+            // 2. Get unique route IDs
+            const routeIds = [...new Set(data.map(r => r.route_id).filter(id => id))];
+            nearbyRoutes = routeIds; // Keep this global variable updated
 
-            const options = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
-            navigator.geolocation.getCurrentPosition(position => {
-                const currentLat = position.coords.latitude;
-                const currentLon = position.coords.longitude;
-                
-                const nearbyTerminals = allTerminals.filter(terminal => {
-                    return getHaversineDistance(currentLat, currentLon, terminal.latitude, terminal.longitude) < BEACON_TERMINAL_PROXIMITY_M;
+            // 3. Populate the select element
+            routeToTrackSelect.innerHTML = '<option value="">-- Select an Active Route --</option>';
+            if (routeIds.length === 0) {
+                routeToTrackSelect.innerHTML = '<option value="">No vehicles are currently sharing a route.</option>';
+            } else {
+                routeIds.forEach(id => {
+                    const option = document.createElement('option');
+                    option.value = id;
+                    option.textContent = `Route: ${id}`;
+                    routeToTrackSelect.appendChild(option);
                 });
+            }
 
-                const routeIds = [...new Set(nearbyTerminals.map(t => t.route_id).filter(id => id))];
-                nearbyRoutes = routeIds;
-                
-                routeToTrackSelect.innerHTML = '<option value="">-- Select a Nearby Route --</option>';
-                if (routeIds.length === 0) {
-                    routeToTrackSelect.innerHTML = '<option value="">No active stops/stations within 500m.</option>';
-                } else {
-                    routeIds.forEach(id => {
-                        const option = document.createElement('option');
-                        option.value = id;
-                        option.textContent = `Route: ${id}`;
-                        routeToTrackSelect.appendChild(option);
-                    });
-                }
-                vehicleToTrackSelect.disabled = false;
-                setVehicleButton.disabled = false;
-            }, (err) => {
-                routeToTrackSelect.innerHTML = `<option value="">GPS Error: ${err.code}</option>`;
-                console.error("Geolocation Error for Nearby Routes:", err);
-            }, options);
+            // Enable vehicle selection only if routes are available
+            vehicleToTrackSelect.disabled = routeIds.length === 0;
+            setVehicleButton.disabled = routeIds.length === 0;
         }
 
         async function fetchVehiclesOnRoute(routeId) {
@@ -1259,7 +1268,9 @@
                     document.getElementById('driver-vehicle-selection').style.display = 'none';
                     document.getElementById('vehicle-registration-collapsible').style.display = 'none'; 
                     sharerRouteControl.style.display = 'none';
-                    identifyNearbyRoutes(); 
+                    
+                    // [NEW LOGIC] Call the function to fetch routes based on active driver shares
+                    await fetchActiveRoutes(); 
                     
                     if (currentPlateNumber) {
                         passengerSeatReportForm.style.display = 'block';
@@ -1456,16 +1467,28 @@
              
              if (!startTerminalId) return;
 
-             const selectedStartTerminal = allTerminals.find(t => t.id == startTerminalId);
-             if (!selectedStartTerminal || !selectedStartTerminal.route_id) return;
+             // 1. Convert the input ID (from select box) to a string for consistent comparison
+             const startIdStr = String(startTerminalId); 
+
+             // 2. Find the starting terminal using a consistent string comparison
+             const selectedStartTerminal = allTerminals.find(t => String(t.id) === startIdStr);
+             
+             if (!selectedStartTerminal || !selectedStartTerminal.route_id) {
+                 if (selectedStartTerminal) {
+                     console.warn(`Terminal ${selectedStartTerminal.name} is missing a Route ID.`);
+                 }
+                 return;
+             }
 
              endTerminalSelect.disabled = false;
              allTerminals
-                .filter(t => t.route_id === selectedStartTerminal.route_id && t.id != startTerminalId)
+                // 3. Filter terminals that have the SAME route_id AND a DIFFERENT ID
+                .filter(t => t.route_id === selectedStartTerminal.route_id && String(t.id) !== startIdStr)
                 .forEach(terminal => {
                     const option = document.createElement('option');
                     option.value = terminal.id;
-                    option.textContent = terminal.name;
+                    // Display the terminal name along with its route ID for clarity
+                    option.textContent = `${terminal.name} (Route: ${terminal.route_id})`;
                     endTerminalSelect.appendChild(option);
                 });
         }
@@ -1484,8 +1507,8 @@
                 return;
             }
 
-            const startTerminal = allTerminals.find(t => t.id == startId);
-            const endTerminal = allTerminals.find(t => t.id == endId);
+            const startTerminal = allTerminals.find(t => String(t.id) === String(startId));
+            const endTerminal = allTerminals.find(t => String(t.id) === String(endId));
 
             if (!navigator.geolocation) {
                 alert('Cannot draw route without current GPS location.');
