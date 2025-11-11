@@ -1,9 +1,166 @@
 <!DOCTYPE html>
 <html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚌 Secure Transport Sharer & Viewer</title>
+
+    <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; overflow-x: hidden; }
+        #map { width: 100%; height: 100vh; position: absolute; top: 0; left: 0; cursor: default; }
+
+        /* --- HEADER & HAMBURGER MENU STYLES --- */
+        .header {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 15px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: fixed; /* Fixed position over the map */
+            top: 0;
+            left: 0;
+            width: 100%;
+            z-index: 10; /* Above the map */
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .header h1 {
+            font-size: 1.2em;
+            margin: 0;
+            flex-grow: 1;
+            text-align: center;
+        }
+
+        #menu-toggle-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 30px;
+            line-height: 1;
+            padding: 0 10px;
+            cursor: pointer;
+            z-index: 11;
+        }
+
+        /* --- SIDEBAR MENU STYLES --- */
+        #sidebar-menu {
+            position: fixed;
+            top: 0;
+            left: -300px; /* Hidden off-screen */
+            width: 280px;
+            height: 100%;
+            background-color: #f8f9fa;
+            color: #333;
+            z-index: 20; /* Above everything else */
+            box-shadow: 2px 0 5px rgba(0,0,0,0.5);
+            transition: left 0.3s ease-in-out;
+            padding: 20px 0;
+            overflow-y: auto;
+        }
+        #sidebar-menu.open {
+            left: 0;
+        }
+        #sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 15;
+            display: none;
+        }
+        #sidebar-overlay.open {
+            display: block;
+        }
+        .menu-content {
+            padding: 0 20px;
+        }
+        .menu-content h2, .menu-content h4 {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #ddd;
+        }
+        .menu-content h2:first-child, .menu-content h4:first-child {
+            border-top: none;
+            padding-top: 0;
+        }
+
+        /* Existing styles adapted for the menu */
+        .controls {
+            padding: 10px 0; /* Reduced padding for menu space */
+            background-color: transparent;
+            border-top: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: stretch;
+        }
+        #auth-container, #signup-container {
+            padding: 10px 0; 
+            text-align: center; 
+            background-color: transparent;
+            border-bottom: none;
+        }
+        .input-group { margin: 10px 0; }
+        .input-group input, .input-group select { width: 100%; }
+        .input-group > div { flex-direction: column; gap: 5px; }
+
+        /* Status and Toggle Button Positioning */
+        #status-bar {
+            position: fixed;
+            top: 55px; /* Below the main header */
+            left: 0;
+            width: 100%;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 8px 15px;
+            z-index: 9; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .share-btn { background-color: #28a745; color: white; }
+        .stop-btn { background-color: #dc3545; color: white; }
+        .status-text { font-weight: bold; }
+        
+        /* Vehicle/Terminal styles remain the same */
+        .direction-arrow {
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-bottom: 20px solid;
+            position: relative;
+            border-radius: 2px;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+        }
+        .terminal-marker {
+            background-color: #007bff; 
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-weight: bold;
+            font-size: 10px;
+        }
+    </style>
+</head>
 <body>
     
     <div class="header">
-        </div>
+        <button id="menu-toggle-btn" onclick="toggleSidebar()">☰</button>
+        <h1>Live Transport Viewer</h1>
+        <div style="width: 40px;"></div> 
+    </div>
 
     <div id="status-bar">
         <div id="status" class="status-text">Checking login status...</div>
@@ -11,6 +168,44 @@
     
     <div id="sidebar-menu">
         <div class="menu-content">
+            
+            <div id="auth-container">
+                <h2>Location Sharer Login</h2>
+                <div id="login-error-message" style="color: #dc3545; font-weight: bold; margin-bottom: 10px;"></div>
+                
+                <div id="login-form-content" class="input-group">
+                    <input type="email" id="email" placeholder="Sharer Email">
+                    <input type="password" id="password" placeholder="Password">
+                    <div>
+                        <button id="loginButton">Login</button>
+                    </div>
+                    <p style="margin-top: 10px;">New user? 
+                        <a href="#" id="showSignupLink">Create an Account</a>
+                    </p>
+                </div>
+            </div>
+
+            <div id="signup-container" style="display:none;">
+                <h2>Create Sharer Account</h2>
+                <div class="input-group">
+                    <input type="text" id="signup-name" placeholder="Full Name" required>
+                    <input type="email" id="signup-email" placeholder="Email" required>
+                    <input type="password" id="signup-password" placeholder="Password (Min 6 chars)" required>
+                    
+                    <select id="signup-role">
+                        <option value="">-- I am a --</option>
+                        <option value="driver">Driver / Vehicle Owner</option>
+                        <option value="sharer_passenger">Passenger (to act as beacon)</option>
+                    </select>
+
+                    <input type="text" id="signup-tracking-id" placeholder="Assigned Vehicle ID (e.g., JEEP-001)" style="display:none;">
+
+                    <button id="signupButton" class="share-btn" style="width: 100%;">Sign Up</button>
+                    <p style="margin-top: 10px;">Already have an account? 
+                        <a href="#" id="showLoginLink">Go to Login</a>
+                    </p>
+                </div>
+            </div>
             
             <div id="sharer-controls-container" style="display: none;">
                 <button id="toggleButton" class="share-btn" disabled style="width: 100%;">Start Sharing Location</button>
@@ -26,11 +221,55 @@
                     <button id="setVehicleButton" style="width: 100%; margin-top: 5px; background-color: #007bff;" disabled>Set as Beacon</button>
                 </div>
                 <div id="sharer-route-control" class="controls" style="flex-direction: column; align-items: stretch; gap: 10px;">
+                    <h4>Manual Trip Control</h4>
+                    <div style="display: flex; flex-direction: column; gap: 5px; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
+                        <label for="startTerminalSelect">Start Terminal:</label>
+                        <select id="startTerminalSelect">
+                            <option value="">-- Auto-Detect (Default) --</option>
+                        </select>
+                        
+                        <label for="endTerminalSelect">End Terminal:</label>
+                        <select id="endTerminalSelect" disabled>
+                            <option value="">-- Select Route & Destination --</option>
+                        </select>
+
+                        <button id="drawManualRouteButton" class="share-btn" style="background-color: #007bff;">Draw Route Manually</button>
+                        <button id="clearManualRouteButton" class="stop-btn">Clear Route</button>
                     </div>
+                </div>
+            </div>
+
+
+            <div id="terminal-tools-container" style="display: none;">
+                <h4 id="toggleTerminalMenuBtn" style="cursor: pointer; background-color: #007bff; color: white; padding: 10px; border-radius: 4px;">Terminal Tools ▼</h4>
+                
+                <div id="terminal-submenu" class="controls" style="display: none; flex-direction: column; align-items: stretch; gap: 10px;">
+                    
+                    <hr style="width: 100%;">
+
+                    <h4>Add New Terminal</h4>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <input type="text" id="terminalNameInput" placeholder="Name (e.g., Cubao Stop)">
+                        <input type="text" id="routeIdInput" placeholder="Route ID (e.g., R-1A)" style="flex-grow: 1;">
+                        <button id="captureGPSButton" class="share-btn">📍 Capture My GPS</button>
+                    </div>
+                    
+                    <button id="dropPinButton" class="share-btn">📌 Click Map to Drop Pin</button>
+                    <div id="pin-location-display" style="font-style: italic; color: #555; text-align: center;"></div>
+                    
+                    <button id="savePinButton" class="share-btn" disabled>💾 Save Pinned Terminal</button>
+                </div>
+            </div>
+
+            <hr style="width: 100%;">
+            <div class="controls" style="padding-top: 10px;">
+                <button id="signOutButton" style="background-color: #6c757d; color: white; display: none;">Sign Out</button>
             </div>
             
-            </div>
+        </div>
     </div>
+    <div id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
     <div id='map'></div>
 
     <script>
@@ -563,79 +802,6 @@
             toggleSidebar(); // Close menu after successful signup
         }
 
-        async function initializeSharerSession(user) {
-            // 1. Reset Visibility
-            authContainer.style.display = 'none';
-            signupContainer.style.display = 'none'; 
-            signOutButton.style.display = 'inline-block';
-            sharerControlsContainer.style.display = 'none';
-            terminalToolsContainer.style.display = 'none'; 
-            loginErrorMessageDiv.textContent = ''; 
-            vehicleSelectionContainer.style.display = 'none'; // Default hidden
-
-            // 2. Get Profile Data
-            const { data: profileData, error: profileError } = await supabaseClient
-                .from('user_profiles')
-                .select('role, default_tracking_id')
-                .eq('id', user.id)
-                .single();
-            
-            if (profileError || !profileData) {
-                 statusDiv.textContent = 'Login successful, but user profile not found. Contact Admin.';
-                 statusDiv.style.color = '#dc3545';
-                 return;
-            }
-
-            currentUserRole = profileData.role;
-            currentTrackingId = profileData.default_tracking_id;
-
-            // 3. Determine Controls to Show
-            sharerControlsContainer.style.display = 'block';
-
-            if (currentUserRole === 'driver') {
-                // DRIVER LOGIC: Use default vehicle ID, hide selection controls
-                vehicleSelectionContainer.style.display = 'none'; 
-                
-                if (currentTrackingId) {
-                    toggleButton.disabled = false;
-                    statusDiv.textContent = `Driver logged in as ${currentTrackingId}. Ready to share.`;
-                    currentVehicleType = 'Jeepney'; 
-                    statusDiv.style.color = '#007bff'; 
-                } else {
-                    toggleButton.disabled = true;
-                    statusDiv.textContent = `Driver logged in. ERROR: Vehicle ID missing. Contact Admin.`;
-                    statusDiv.style.color = '#dc3545';
-                }
-            } 
-            
-            else if (currentUserRole === 'sharer_passenger') {
-                // PASSENGER LOGIC: Must select a vehicle, show selection controls
-                vehicleSelectionContainer.style.display = 'block'; 
-                toggleButton.disabled = true; 
-                currentTrackingId = null; 
-                currentVehicleType = 'Jeepney'; 
-
-                statusDiv.textContent = `Passenger logged in. Locating nearby routes...`;
-                statusDiv.style.color = '#ffc107';
-                
-                // 🛑 Start the beacon selection process
-                identifyNearbyRoutes();
-            }
-            
-            else if (currentUserRole === 'admin') {
-                terminalToolsContainer.style.display = 'block'; 
-                toggleButton.disabled = true;
-                sharerControlsContainer.style.display = 'none';
-                statusDiv.textContent = 'Admin logged in. Terminal Tools enabled. Sharing disabled.';
-                statusDiv.style.color = '#ffc107'; 
-            }
-            
-            // Allow admin access to terminal tools if a sharer ID is listed
-            if (ADMIN_SHARER_IDS.includes(user.id)) {
-                terminalToolsContainer.style.display = 'block';
-            }
-        }
-        
         async function handleLogin() { 
             const email = emailInput.value;
             const password = passwordInput.value;
