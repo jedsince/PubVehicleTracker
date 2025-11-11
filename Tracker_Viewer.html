@@ -22,11 +22,11 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            position: fixed; /* Fixed position over the map */
+            position: fixed; 
             top: 0;
             left: 0;
             width: 100%;
-            z-index: 10; /* Above the map */
+            z-index: 10; 
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
         .header h1 {
@@ -51,12 +51,12 @@
         #sidebar-menu {
             position: fixed;
             top: 0;
-            left: -300px; /* Hidden off-screen */
+            left: -300px; 
             width: 280px;
             height: 100%;
             background-color: #f8f9fa;
             color: #333;
-            z-index: 20; /* Above everything else */
+            z-index: 20; 
             box-shadow: 2px 0 5px rgba(0,0,0,0.5);
             transition: left 0.3s ease-in-out;
             padding: 20px 0;
@@ -93,7 +93,7 @@
 
         /* Existing styles adapted for the menu */
         .controls {
-            padding: 10px 0; /* Reduced padding for menu space */
+            padding: 10px 0; 
             background-color: transparent;
             border-top: none;
             display: flex;
@@ -114,7 +114,7 @@
         /* Status and Toggle Button Positioning */
         #status-bar {
             position: fixed;
-            top: 55px; /* Below the main header */
+            top: 55px; 
             left: 0;
             width: 100%;
             background-color: rgba(255, 255, 255, 0.9);
@@ -289,7 +289,7 @@
         const PING_RATE_MS = 30000; 
         const MIN_STOP_TIME_MS = 180000; 
         const PROXIMITY_THRESHOLD_M = 100; 
-        const BEACON_TERMINAL_PROXIMITY_M = 500; // 🛑 New: 500m radius to find nearby terminals
+        const BEACON_TERMINAL_PROXIMITY_M = 500; 
 
         // --- GLOBAL STATE & IDS ---
         let intervalID = null; 
@@ -307,7 +307,7 @@
         const TRIP_ROUTE_SOURCE_ID = 'trip-route-source';
         const TRIP_ROUTE_LAYER_ID = 'trip-route-layer';
         let deviceOrientationHeading = null; 
-        let nearbyRoutes = []; // 🛑 New: Stores Route IDs near the passenger
+        let nearbyRoutes = []; 
 
         // --- DOM Elements & Supabase Client ---
         const sidebarMenu = document.getElementById('sidebar-menu');
@@ -337,7 +337,7 @@
         const sharerRouteControl = document.getElementById('sharer-route-control'); 
         const loginErrorMessageDiv = document.getElementById('login-error-message'); 
         
-        // 🛑 NEW ELEMENTS FOR PASSENGER BEACON LOGIC
+        // NEW ELEMENTS FOR PASSENGER BEACON LOGIC
         const vehicleSelectionContainer = document.getElementById('vehicle-selection-container');
         const routeToTrackSelect = document.getElementById('routeToTrackSelect');
         const vehicleToTrackSelect = document.getElementById('vehicleToTrackSelect');
@@ -349,7 +349,6 @@
         function toggleSidebar() {
             sidebarMenu.classList.toggle('open');
             sidebarOverlay.classList.toggle('open');
-            // Hide menu on interaction if necessary, though login/logout handles this better.
         }
 
         // --- DEVICE ORIENTATION ---
@@ -429,7 +428,7 @@
                  map.flyTo({ center: newLngLat, speed: 0.5 }); 
             }
             if (!isCurrentUser) {
-                // 🛑 Pass current location data along with the tracking ID
+                // Pass current location data along with the tracking ID
                 fetchAndDisplayViewerRoute(trackingId, data.latitude, data.longitude); 
             }
         }
@@ -460,7 +459,7 @@
             console.log(`Loaded ${allTerminals.length} terminals and populated dropdowns.`);
         }
 
-        // 🛑 fetchAndDisplayRoute now accepts currentLat, currentLon for dynamic routing
+        // fetchAndDisplayRoute now accepts currentLat, currentLon for dynamic routing
         async function fetchAndDisplayRoute(startTerminal, endTerminal, currentLat, currentLon) {
             const startCoords = `${startTerminal.longitude},${startTerminal.latitude}`;
             const endCoords = `${endTerminal.longitude},${endTerminal.latitude}`;
@@ -498,7 +497,7 @@
             }
         }
 
-        // 🛑 fetchAndDisplayViewerRoute now accepts currentLat, currentLon
+        // fetchAndDisplayViewerRoute now accepts currentLat, currentLon
         async function fetchAndDisplayViewerRoute(trackingId, currentLat, currentLon) { 
             clearDisplayedRoute(); 
 
@@ -654,9 +653,9 @@
             }
         }
 
-        // --- PASSENGER BEACON LOGIC (MOVED UP) ---
+        // --- PASSENGER BEACON LOGIC ---
         
-        // 🛑 NEW: Step 1 - Get location and find nearby routes
+        // Step 1 - Get location and find nearby routes
         function identifyNearbyRoutes() {
             routeToTrackSelect.innerHTML = '<option value="">-- Searching for Nearby Terminals... --</option>';
             if (!navigator.geolocation) {
@@ -693,7 +692,7 @@
             }, options);
         }
         
-        // 🛑 NEW: Step 2 - Fetch active vehicles on the selected route
+        // Step 2 - Fetch active vehicles on the selected route
         async function fetchActiveVehiclesByRoute(routeId) {
             vehicleToTrackSelect.innerHTML = '<option value="">-- Fetching Vehicles... --</option>';
             setVehicleButton.disabled = true;
@@ -702,7 +701,7 @@
                 .from('active_routes')
                 .select('tracking_id, start_name')
                 .eq('is_active', true)
-                .like('route_id', routeId + '%'); // Use LIKE to match the start of the route ID
+                .like('route_id', routeId + '%'); 
 
             if (activeRoutesError) {
                 console.error('Error fetching active routes:', activeRoutesError);
@@ -726,9 +725,9 @@
         }
 
 
-        // --- AUTHENTICATION & LOGIN/SIGNUP (MOVED UP) ---
+        // --- AUTHENTICATION & LOGIN/SIGNUP ---
         function toggleForms(showSignup) {
-            loginErrorMessageDiv.textContent = ''; // Clear error when switching forms
+            loginErrorMessageDiv.textContent = ''; 
             if (showSignup) {
                 authContainer.style.display = 'none';
                 signupContainer.style.display = 'block';
@@ -744,7 +743,7 @@
                 signupTrackingIdInput.setAttribute('required', 'required');
             } else {
                 signupTrackingIdInput.style.display = 'none';
-                signupTrackingIdInput.removeAttribute('required'); // For passengers, tracking ID is optional
+                signupTrackingIdInput.removeAttribute('required'); 
             }
         };
 
@@ -798,27 +797,26 @@
             statusDiv.textContent = 'SUCCESS! Account created and logged in.';
             statusDiv.style.color = '#28a745';
             initializeSharerSession(session.user);
-            toggleSidebar(); // Close menu after successful signup
+            toggleSidebar(); 
         }
 
         async function handleLogin() { 
             const email = emailInput.value;
             const password = passwordInput.value;
             
-            loginErrorMessageDiv.textContent = ''; // Clear previous error
-            statusDiv.textContent = 'Attempting login...'; // Status bar update for progress
+            loginErrorMessageDiv.textContent = ''; 
+            statusDiv.textContent = 'Attempting login...'; 
 
             const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
 
             if (error) {
-                // 🛑 Error message now appears inside the sidebar
                 loginErrorMessageDiv.textContent = `Login Failed: ${error.message}`;
-                statusDiv.textContent = `Login required to share location.`; // Reset status bar
+                statusDiv.textContent = `Login required to share location.`; 
             } else {
                 const { data: { user } } = await supabaseClient.auth.getUser();
                 if (user) {
                     initializeSharerSession(user);
-                    toggleSidebar(); // Close menu after successful login
+                    toggleSidebar(); 
                 }
             }
         }
@@ -841,7 +839,7 @@
             
             statusDiv.textContent = 'Signed out successfully. Viewing live updates publicly.';
             statusDiv.style.color = '#007bff';
-            toggleSidebar(); // Close menu after sign out
+            toggleSidebar(); 
         }
         
         async function initializeSharerSession(user) {
@@ -852,7 +850,7 @@
             sharerControlsContainer.style.display = 'none';
             terminalToolsContainer.style.display = 'none'; 
             loginErrorMessageDiv.textContent = ''; 
-            vehicleSelectionContainer.style.display = 'none'; // Default hidden
+            vehicleSelectionContainer.style.display = 'none'; 
 
             // 2. Get Profile Data
             const { data: profileData, error: profileError } = await supabaseClient
@@ -874,7 +872,7 @@
             sharerControlsContainer.style.display = 'block';
 
             if (currentUserRole === 'driver') {
-                // DRIVER LOGIC: Use default vehicle ID, hide selection controls
+                // DRIVER LOGIC
                 vehicleSelectionContainer.style.display = 'none'; 
                 
                 if (currentTrackingId) {
@@ -890,7 +888,7 @@
             } 
             
             else if (currentUserRole === 'sharer_passenger') {
-                // PASSENGER LOGIC: Must select a vehicle, show selection controls
+                // PASSENGER LOGIC
                 vehicleSelectionContainer.style.display = 'block'; 
                 toggleButton.disabled = true; 
                 currentTrackingId = null; 
@@ -899,7 +897,7 @@
                 statusDiv.textContent = `Passenger logged in. Locating nearby routes...`;
                 statusDiv.style.color = '#ffc107';
                 
-                // 🛑 Start the beacon selection process
+                // Start the beacon selection process
                 identifyNearbyRoutes();
             }
             
@@ -986,8 +984,8 @@
                         fetchAndDisplayRoute(
                             startTerminalToUse, 
                             endTerminalToUse, 
-                            rawLat,             // Current Latitude
-                            rawLon              // Current Longitude
+                            rawLat,             
+                            rawLon              
                         );
 
                         const { error: routeError } = await supabaseClient
@@ -1005,8 +1003,8 @@
                     fetchAndDisplayRoute(
                         currentTrip.identifiedStartTerminal, 
                         currentTrip.identifiedEndTerminal, 
-                        rawLat,             // Current Latitude
-                        rawLon              // Current Longitude
+                        rawLat,             
+                        rawLon              
                     );
                 }
 
@@ -1026,16 +1024,28 @@
                 }
             }
             
-            // --- SUPABASE UPDATE (Location) ---
-            const { error: updateError } = await supabaseClient
+            // --- SUPABASE UPSERT (Location) ---
+            // 🛑 FIX IMPLEMENTED HERE: Using upsert to insert an initial record if none exists.
+            const { data: upsertData, error: upsertError } = await supabaseClient
                 .from('vehicle_location')
-                .update({ 
-                    latitude: snappedLocation.lat, longitude: snappedLocation.lon, vehicle_type: currentVehicleType, speed: rawSpeed, heading: finalHeading 
-                })
-                .eq('tracking_id', currentTrackingId); 
+                .upsert({ 
+                    tracking_id: currentTrackingId, 
+                    // CRITICAL: Explicitly include sharer_id to pass the INSERT RLS policy
+                    sharer_id: supabaseClient.auth.getUser().id, 
+                    latitude: snappedLocation.lat, 
+                    longitude: snappedLocation.lon, 
+                    vehicle_type: currentVehicleType, 
+                    speed: rawSpeed, 
+                    heading: finalHeading 
+                }, { 
+                    onConflict: 'tracking_id' // Tell Supabase to use tracking_id for conflict resolution
+                }); 
+            
+            // Re-assign error to the old variable name for compatibility with existing logic
+            const updateError = upsertError;
             
             if (updateError) {
-                 console.error('Supabase update error:', updateError);
+                 console.error('Supabase update/insert error:', updateError);
                  statusDiv.textContent = 'ERROR: Update failed. Check RLS policy.'; 
                  statusDiv.style.color = '#dc3545';
             } else if (!isMoving) {
@@ -1060,7 +1070,10 @@
 
         function executeTrackingLogic() {
             const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
+            // Execute once immediately
             navigator.geolocation.getCurrentPosition(success, error, options); 
+            
+            // Then set the interval for subsequent pings
             intervalID = setInterval(() => {
                 navigator.geolocation.getCurrentPosition(success, error, options);
             }, PING_RATE_MS); 
@@ -1098,7 +1111,9 @@
              if (currentTrip.stopTimer) { clearTimeout(currentTrip.stopTimer); currentTrip.stopTimer = null; }
              clearDisplayedRoute();
             
-             if(currentTrackingId) { await supabaseClient.from('active_routes').update({ is_active: false }).eq('tracking_id', currentTrackingId); }
+             if(currentTrackingId) { 
+                 await supabaseClient.from('active_routes').update({ is_active: false }).eq('tracking_id', currentTrackingId); 
+             }
 
              currentTrip.isTrackingTrip = false; currentTrip.startPoint = null; currentTrip.lastStop = null; currentTrip.stopTimer = null; currentTrip.identifiedStartTerminal = null; currentTrip.identifiedEndTerminal = null;  
              isTracking = false;
@@ -1136,7 +1151,7 @@
         document.getElementById('savePinButton').onclick = savePinnedTerminal;
 
 
-        // 🛑 NEW PASSENGER LISTENERS
+        // NEW PASSENGER LISTENERS
         routeToTrackSelect.onchange = function() {
             const routeId = this.value;
             if (routeId) {
@@ -1157,7 +1172,6 @@
             const selectedId = vehicleToTrackSelect.value;
             if (selectedId) {
                 currentTrackingId = selectedId;
-                // Vehicle type is assumed or defaulted for the passenger beacon
                 currentVehicleType = 'Jeepney'; 
                 toggleButton.disabled = false;
                 statusDiv.textContent = `Beacon set for ${currentTrackingId}. Press 'Start Sharing Location' to begin.`;
@@ -1214,7 +1228,7 @@
         };
 
 
-        // --- INITIAL LOAD CHECK (Still at the bottom, as it initiates the process) ---
+        // --- INITIAL LOAD CHECK ---
         supabaseClient.auth.getSession().then(({ data: { session } }) => {
             if (session) {
                 initializeSharerSession(session.user);
