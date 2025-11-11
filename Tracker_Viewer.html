@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚌 Secure Transport Sharer & Viewer a0.3</title>
+    <title>🚌 Secure Transport Sharer & Viewer a0.4</title>
 
     <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
     <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
@@ -235,6 +235,15 @@
             font-weight: bold;
             font-size: 10px;
         }
+        /* --- Passenger Marker Styles (NEW) --- */
+        .passenger-marker {
+            background-color: #ff5722; 
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            box-shadow: 0 0 4px rgba(0,0,0,0.5);
+        }
     </style>
 </head>
 <body>
@@ -426,11 +435,15 @@
         const PROXIMITY_THRESHOLD_M = 100; 
         const BEACON_TERMINAL_PROXIMITY_M = 500; 
 
+        // --- NEW CONSTANT FOR PASSENGER TRACKING ---
+        const PASSENGER_LOCATION_TABLE = 'passenger_location'; 
+
         // --- GLOBAL STATE & IDS ---
         let intervalID = null; 
         let isTracking = false;
         const activeMarkers = new Map(); 
         const activeTerminalMarkers = new Map(); 
+        const activePassengerMarkers = new Map(); // New map for passengers
         let currentPlateNumber = null; 
         let currentVehicleType = null;
         let currentVehicleCapacity = null; 
@@ -444,7 +457,7 @@
         const TRIP_ROUTE_SOURCE_ID = 'trip-route-source';
         const TRIP_ROUTE_LAYER_ID = 'trip-route-layer';
         let deviceOrientationHeading = null; 
-        let nearbyRoutes = []; // This variable will now hold active route IDs
+        let nearbyRoutes = []; 
 
         // --- DOM Elements & Supabase Client ---
         const sidebarMenu = document.getElementById('sidebar-menu');
@@ -616,6 +629,40 @@
                 fetchAndDisplayViewerRoute(plateNumber, data.latitude, data.longitude); 
             }
         }
+        
+        // --- NEW: PASSENGER MARKER DISPLAY ---
+        function updatePassengerMarker(data) {
+            const userId = data.user_id;
+            if (!data.latitude || !data.longitude || !userId) return; 
+            const newLngLat = [data.longitude, data.latitude];
+
+            let marker = activePassengerMarkers.get(userId);
+            
+            if (!marker) {
+                const el = document.createElement('div');
+                el.className = 'passenger-marker';
+                
+                // Drivers/Admins get a popup with user info blip
+                if (currentUserRole === 'driver' || currentUserRole === 'admin') {
+                    marker = new mapboxgl.Marker({ element: el, anchor: 'center' }) 
+                        .setLngLat(newLngLat)
+                        .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(`
+                            <h4>Passenger Waiting</h4>
+                            <p>User ID: ${userId.substring(0, 8)}...<br>
+                        `)) 
+                        .addTo(map);
+                } else {
+                    // Viewers only see a simple blip without personal info
+                    marker = new mapboxgl.Marker({ element: el, anchor: 'center' }) 
+                        .setLngLat(newLngLat)
+                        .addTo(map);
+                }
+                activePassengerMarkers.set(userId, marker);
+            }
+            
+            marker.setLngLat(newLngLat);
+        }
+        // --- END PASSENGER MARKER DISPLAY ---
 
         async function fetchAndDisplayAllTerminals() {
             const { data, error } = await supabaseClient.from('terminals').select('*');
@@ -707,6 +754,26 @@
                 map.getSource(TRIP_ROUTE_SOURCE_ID).setData({ type: 'FeatureCollection', features: [] });
             }
         }
+        
+        // --- NEW: PASSENGER SUBSCRIPTION FUNCTION ---
+        function subscribeToPassengerLocationUpdates() {
+            supabaseClient.channel('all_passengers') 
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: PASSENGER_LOCATION_TABLE }, (payload) => {
+                    updatePassengerMarker(payload.new);
+                })
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: PASSENGER_LOCATION_TABLE }, (payload) => {
+                    updatePassengerMarker(payload.new);
+                })
+                .on('postgres_changes', { event: 'DELETE', schema: 'public', table: PASSENGER_LOCATION_TABLE }, (payload) => {
+                    const marker = activePassengerMarkers.get(payload.old.user_id);
+                    if (marker) {
+                        marker.remove();
+                        activePassengerMarkers.delete(payload.old.user_id);
+                    }
+                })
+                .subscribe();
+        }
+        // --- END PASSENGER SUBSCRIPTION FUNCTION ---
 
         function subscribeToLocationUpdates() { 
             supabaseClient.channel('all_vehicles') 
@@ -729,15 +796,9 @@
                     }
                 })
                 .subscribe();
-            
-            // Subscribe to active route changes to update the viewer dropdown instantly
-            supabaseClient.channel('active_routes_updates')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'active_routes' }, async (payload) => {
-                    if (currentUserRole === 'viewer') {
-                        await fetchActiveRoutes(); 
-                    }
-                })
-                .subscribe();
+                
+            // NEW: Passenger Location Subscription
+            subscribeToPassengerLocationUpdates();
         }
 
         // --- MAP INITIALIZATION ---
@@ -759,6 +820,10 @@
              });
              const { data: vehicleData } = await supabaseClient.from('vehicle_location').select('*');
              if (vehicleData) vehicleData.forEach(updateMarker);
+             
+             // NEW: Initial load of passenger data
+             const { data: passengerData } = await supabaseClient.from(PASSENGER_LOCATION_TABLE).select('*');
+             if (passengerData) passengerData.forEach(updatePassengerMarker);
              
              // ✅ INITIAL TERMINAL LOAD - ONLY ONCE
              await fetchAndDisplayAllTerminals(); 
@@ -792,22 +857,15 @@
             if (!isPinningMode) return;
             clearTempPin();
             const lat = e.lngLat.lat;
-            // FIX APPLIED HERE: Use .lng for longitude from Mapbox event
-            const lon = e.lngLat.lng; 
-            
-            // Store for saving later
+            const lon = e.lngLat.lon;
             tempPinLocation = { lat: lat, lon: lon };
-            
             const el = document.createElement('div');
             el.className = 'terminal-marker';
             el.textContent = '?'; 
             el.style.backgroundColor = '#ffc107'; 
-            
-            // Mapbox marker takes [longitude, latitude]
             tempTerminalMarker = new mapboxgl.Marker({ element: el, anchor: 'center' })
-                .setLngLat([lon, lat]) 
+                .setLngLat([lon, lat]) // FIX HERE: [longitude, latitude]
                 .addTo(map);
-                
             document.getElementById('pin-location-display').textContent = `Pin Dropped at: Lat ${lat.toFixed(4)}, Lon ${lon.toFixed(4)}`;
             document.getElementById('savePinButton').disabled = false;
         }
@@ -956,46 +1014,46 @@
             toggleSidebar();
         }
 
-        // --- VIEWER/PASSENGER LOGIC (UPDATED) ---
+        // --- VIEWER/PASSENGER LOGIC ---
         
-        // [NEW LOGIC] Function now fetches active routes from the Supabase table, not based on proximity.
-        async function fetchActiveRoutes() {
+        function identifyNearbyRoutes() {
             viewerSelectionContainer.style.display = 'block';
             passengerSeatReportForm.style.display = 'none'; 
-            routeToTrackSelect.innerHTML = '<option value="">-- Loading Active Routes... --</option>';
-
-            // 1. Query the active_routes table for all active route IDs
-            const { data, error } = await supabaseClient
-                .from('active_routes')
-                .select('route_id')
-                .eq('is_active', true);
-
-            if (error) {
-                console.error("Error fetching active routes:", error);
-                routeToTrackSelect.innerHTML = '<option value="">Error loading active routes.</option>';
+            routeToTrackSelect.innerHTML = '<option value="">-- Searching for Nearby Stops/Stations... --</option>';
+            if (!navigator.geolocation) {
+                routeToTrackSelect.innerHTML = '<option value="">Geolocation not supported.</option>';
                 return;
             }
-            
-            // 2. Get unique route IDs
-            const routeIds = [...new Set(data.map(r => r.route_id).filter(id => id))];
-            nearbyRoutes = routeIds; // Keep this global variable updated
 
-            // 3. Populate the select element
-            routeToTrackSelect.innerHTML = '<option value="">-- Select an Active Route --</option>';
-            if (routeIds.length === 0) {
-                routeToTrackSelect.innerHTML = '<option value="">No vehicles are currently sharing a route.</option>';
-            } else {
-                routeIds.forEach(id => {
-                    const option = document.createElement('option');
-                    option.value = id;
-                    option.textContent = `Route: ${id}`;
-                    routeToTrackSelect.appendChild(option);
+            const options = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
+            navigator.geolocation.getCurrentPosition(position => {
+                const currentLat = position.coords.latitude;
+                const currentLon = position.coords.longitude;
+                
+                const nearbyTerminals = allTerminals.filter(terminal => {
+                    return getHaversineDistance(currentLat, currentLon, terminal.latitude, terminal.longitude) < BEACON_TERMINAL_PROXIMITY_M;
                 });
-            }
 
-            // Enable vehicle selection only if routes are available
-            vehicleToTrackSelect.disabled = routeIds.length === 0;
-            setVehicleButton.disabled = routeIds.length === 0;
+                const routeIds = [...new Set(nearbyTerminals.map(t => t.route_id).filter(id => id))];
+                nearbyRoutes = routeIds;
+                
+                routeToTrackSelect.innerHTML = '<option value="">-- Select a Nearby Route --</option>';
+                if (routeIds.length === 0) {
+                    routeToTrackSelect.innerHTML = '<option value="">No active stops/stations within 500m.</option>';
+                } else {
+                    routeIds.forEach(id => {
+                        const option = document.createElement('option');
+                        option.value = id;
+                        option.textContent = `Route: ${id}`;
+                        routeToTrackSelect.appendChild(option);
+                    });
+                }
+                vehicleToTrackSelect.disabled = false;
+                setVehicleButton.disabled = false;
+            }, (err) => {
+                routeToTrackSelect.innerHTML = `<option value="">GPS Error: ${err.code}</option>`;
+                console.error("Geolocation Error for Nearby Routes:", err);
+            }, options);
         }
 
         async function fetchVehiclesOnRoute(routeId) {
@@ -1033,9 +1091,10 @@
         function setVehicleAsBeacon() {
             const selectedPlateNumber = vehicleToTrackSelect.value;
             if (!selectedPlateNumber) {
-                alert("Please select a vehicle's plate number first.");
+                alert("Please select a vehicle to track first.");
                 return;
             }
+            // If the user is sharing their own location, stop it before tracking a vehicle
             if(isTracking) stopLocationSharing(); 
             
             currentPlateNumber = selectedPlateNumber;
@@ -1142,6 +1201,10 @@
             if (intervalID) clearInterval(intervalID);
             updateUI(null);
             clearDisplayedRoute();
+            
+            // Remove all passenger markers on sign out
+            activePassengerMarkers.forEach(marker => marker.remove());
+            activePassengerMarkers.clear();
         }
 
         async function saveUserRoleSetup() {
@@ -1263,39 +1326,52 @@
                         statusDiv.style.color = '#dc3545';
                         floatingTrackingBtn.disabled = true;
                     }
+                    
+                    // Driver Floating Button State
+                    if (isTracking) {
+                        floatingTrackingBtn.classList.remove('share-btn');
+                        floatingTrackingBtn.classList.add('stop-btn');
+                        floatingTrackingBtn.textContent = '■';
+                    } else if (currentPlateNumber) {
+                        floatingTrackingBtn.classList.remove('stop-btn');
+                        floatingTrackingBtn.classList.add('share-btn');
+                        floatingTrackingBtn.textContent = '▶';
+                        floatingTrackingBtn.disabled = false;
+                    }
 
-                } else { 
+
+                } else { // Viewer/Passenger Role
                     document.getElementById('driver-vehicle-selection').style.display = 'none';
                     document.getElementById('vehicle-registration-collapsible').style.display = 'none'; 
                     sharerRouteControl.style.display = 'none';
-                    
-                    // [NEW LOGIC] Call the function to fetch routes based on active driver shares
-                    await fetchActiveRoutes(); 
+                    identifyNearbyRoutes(); 
                     
                     if (currentPlateNumber) {
                         passengerSeatReportForm.style.display = 'block';
-                        statusDiv.textContent = `Viewing Plate No. ${currentPlateNumber}.`;
+                        statusDiv.textContent = `Viewing Plate No. ${currentPlateNumber}. Stop viewing to share your location.`;
                     } else {
-                         statusDiv.textContent = 'Logged in as Viewer/Passenger. Select a vehicle to track.';
+                         statusDiv.textContent = `Logged in as Viewer/Passenger. Select a vehicle to track or share your location (📍).`;
                          statusDiv.style.color = '#007bff';
                     }
                     
-                    floatingTrackingBtn.disabled = true;
-                    floatingTrackingBtn.style.backgroundColor = '#6c757d'; 
-                    floatingTrackingBtn.textContent = '🚫';
+                    // Viewer Floating Button State
+                    floatingTrackingBtn.disabled = false;
+                    floatingTrackingBtn.classList.remove('share-btn', 'stop-btn');
+                    
+                    if (isTracking) {
+                        floatingTrackingBtn.classList.add('stop-btn');
+                        floatingTrackingBtn.textContent = '■'; // Stop sharing own location
+                    } else if (currentPlateNumber) {
+                        // Viewing a vehicle: disable button to prevent sharing *while* viewing
+                        floatingTrackingBtn.disabled = true;
+                        floatingTrackingBtn.style.backgroundColor = '#6c757d'; 
+                        floatingTrackingBtn.textContent = '🚫';
+                    } else {
+                        // Not viewing, not tracking: ready to share own location
+                        floatingTrackingBtn.classList.add('share-btn');
+                        floatingTrackingBtn.textContent = '📍'; 
+                    }
                 }
-
-                // --- Floating Button State (Visual only) ---
-                if (isTracking) {
-                    floatingTrackingBtn.classList.remove('share-btn');
-                    floatingTrackingBtn.classList.add('stop-btn');
-                    floatingTrackingBtn.textContent = '■';
-                } else if (isDriver && currentPlateNumber) {
-                    floatingTrackingBtn.classList.remove('stop-btn');
-                    floatingTrackingBtn.classList.add('share-btn');
-                    floatingTrackingBtn.textContent = '▶';
-                }
-
             } else {
                 statusDiv.textContent = 'Login Required.';
                 statusDiv.style.color = '#dc3545';
@@ -1305,8 +1381,12 @@
 
         // --- LOCATION SHARING/PINGING LOGIC ---
         function toggleLocationSharing() {
-            if (!currentUserRole || currentUserRole === 'viewer' || !currentPlateNumber) {
+            if (currentUserRole === 'driver' && !currentPlateNumber) {
                 alert("Please set your role as 'Driver' and select a registered vehicle before sharing location.");
+                return;
+            }
+            if (currentUserRole === 'viewer' && currentPlateNumber && !isTracking) {
+                alert("Please stop tracking the vehicle before sharing your own location.");
                 return;
             }
             if (isTracking) {
@@ -1322,7 +1402,7 @@
                 return;
             }
             
-            if (currentVehicleCapacity === null) {
+            if (currentUserRole === 'driver' && currentVehicleCapacity === null) {
                 alert("Please select a vehicle first."); return;
             }
 
@@ -1330,23 +1410,34 @@
             floatingTrackingBtn.disabled = true;
 
             const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
-            navigator.geolocation.getCurrentPosition(position => {
+            
+            // Function to run after position is found
+            const positionCallback = position => {
                 isTracking = true;
                 floatingTrackingBtn.classList.remove('share-btn');
                 floatingTrackingBtn.classList.add('stop-btn');
                 floatingTrackingBtn.textContent = '■';
                 floatingTrackingBtn.disabled = false;
-                onMapControls.style.display = 'flex'; 
                 
-                updateLocationInSupabase(position); 
+                // Determine which update function to use
+                const updateFunc = currentUserRole === 'driver' 
+                    ? updateLocationInSupabase // Driver's function
+                    : updatePassengerLocationInSupabase; // Viewer's function
+                
+                onMapControls.style.display = currentUserRole === 'driver' ? 'flex' : 'none'; 
+                
+                updateFunc(position); 
 
                 intervalID = setInterval(() => {
-                    navigator.geolocation.getCurrentPosition(updateLocationInSupabase, handleGeolocationError, options);
+                    navigator.geolocation.getCurrentPosition(updateFunc, handleGeolocationError, options);
                 }, PING_RATE_MS);
-            }, handleGeolocationError, options);
+            };
+
+            navigator.geolocation.getCurrentPosition(positionCallback, handleGeolocationError, options);
         }
 
-        function stopLocationSharing() {
+        async function stopLocationSharing() {
+            // Common logic
             isTracking = false;
             if (intervalID) {
                 clearInterval(intervalID);
@@ -1354,15 +1445,34 @@
             }
             floatingTrackingBtn.classList.remove('stop-btn');
             floatingTrackingBtn.classList.add('share-btn');
-            floatingTrackingBtn.textContent = '▶';
+            floatingTrackingBtn.textContent = currentUserRole === 'viewer' ? '📍' : '▶'; // Reset viewer to pin icon
             onMapControls.style.display = 'none'; 
-            statusDiv.textContent = `Location sharing stopped for ${currentPlateNumber}.`;
-            statusDiv.style.color = '#dc3545';
             clearDisplayedRoute();
             
-            markRouteAsInactive();
+            if (currentUserRole === 'driver') {
+                statusDiv.textContent = `Location sharing stopped for ${currentPlateNumber}.`;
+                statusDiv.style.color = '#dc3545';
+                markRouteAsInactive();
+                currentTrip = { isTrackingTrip: false, startPoint: null, lastStop: null, stopTimer: null, identifiedStartTerminal: null, identifiedEndTerminal: null };
+            } else if (currentUserRole === 'viewer') {
+                // NEW: Passenger/Viewer logic - Delete location
+                const userSession = await supabaseClient.auth.getUser();
+                const userId = userSession.data.user?.id;
+                
+                if(userId) {
+                    const { error } = await supabaseClient
+                        .from(PASSENGER_LOCATION_TABLE)
+                        .delete()
+                        .eq('user_id', userId);
+
+                    if (error) console.error("Error stopping passenger sharing:", error);
+                }
+                statusDiv.textContent = `Passenger location sharing stopped.`;
+                statusDiv.style.color = '#dc3545';
+            }
             
-            currentTrip = { isTrackingTrip: false, startPoint: null, lastStop: null, stopTimer: null, identifiedStartTerminal: null, identifiedEndTerminal: null };
+            // Re-run UI update to ensure button state is correct, especially for viewer
+            updateUI((await supabaseClient.auth.getUser()).data.user?.id);
         }
 
         async function markRouteAsInactive() {
@@ -1381,7 +1491,7 @@
             stopLocationSharing();
         }
 
-        // *** CRITICAL FIX: UPDATED HEADING LOGIC ***
+        // *** CRITICAL FIX: UPDATED HEADING LOGIC (DRIVER'S FUNCTION) ***
         async function updateLocationInSupabase(position) {
             const userSession = await supabaseClient.auth.getUser();
             const userId = userSession.data.user?.id;
@@ -1435,6 +1545,42 @@
                 statusDiv.style.color = getSpeedColor(speedKPH / 3.6);
             }
         }
+        
+        // --- NEW: PASSENGER LOCATION UPDATE FUNCTION ---
+        async function updatePassengerLocationInSupabase(position) {
+            const userSession = await supabaseClient.auth.getUser();
+            const userId = userSession.data.user?.id;
+            
+            if (!userId) {
+                console.error("User ID missing. Cannot share passenger location.");
+                statusDiv.textContent = "ERROR: User ID missing. Log out and back in.";
+                statusDiv.style.color = '#dc3545';
+                return;
+            }
+            
+            const { latitude: rawLat, longitude: rawLon, accuracy } = position.coords;
+            const { lat, lon } = simpleSnap(rawLat, rawLon, accuracy);
+            
+            const { error } = await supabaseClient
+                .from(PASSENGER_LOCATION_TABLE)
+                .upsert({
+                    user_id: userId,          
+                    latitude: lat,
+                    longitude: lon,
+                    accuracy: accuracy,
+                    last_updated: new Date().toISOString()
+                }, { on_conflict: 'user_id' }); 
+
+            if (error) {
+                console.error("Supabase passenger update/insert error:", error);
+                statusDiv.textContent = `ERROR: Passenger location not shared. ${error.message.substring(0, 50)}...`;
+                statusDiv.style.color = '#dc3545';
+            } else {
+                statusDiv.textContent = `Sharing ON. Viewer location shared.`;
+                statusDiv.style.color = '#ff5722'; 
+            }
+        }
+        // --- END PASSENGER LOCATION UPDATE FUNCTION ---
 
         // --- NEW DRIVER SEAT CONTROL FUNCTIONS ---
         function updateOccupiedSeats(delta) {
@@ -1456,6 +1602,7 @@
                 return;
             }
             statusDiv.textContent = `Updating seat count...`;
+            // Call the driver's update function explicitly
             navigator.geolocation.getCurrentPosition(updateLocationInSupabase, handleGeolocationError, { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 });
         }
 
@@ -1467,28 +1614,16 @@
              
              if (!startTerminalId) return;
 
-             // 1. Convert the input ID (from select box) to a string for consistent comparison
-             const startIdStr = String(startTerminalId); 
-
-             // 2. Find the starting terminal using a consistent string comparison
-             const selectedStartTerminal = allTerminals.find(t => String(t.id) === startIdStr);
-             
-             if (!selectedStartTerminal || !selectedStartTerminal.route_id) {
-                 if (selectedStartTerminal) {
-                     console.warn(`Terminal ${selectedStartTerminal.name} is missing a Route ID.`);
-                 }
-                 return;
-             }
+             const selectedStartTerminal = allTerminals.find(t => t.id == startTerminalId);
+             if (!selectedStartTerminal || !selectedStartTerminal.route_id) return;
 
              endTerminalSelect.disabled = false;
              allTerminals
-                // 3. Filter terminals that have the SAME route_id AND a DIFFERENT ID
-                .filter(t => t.route_id === selectedStartTerminal.route_id && String(t.id) !== startIdStr)
+                .filter(t => t.route_id === selectedStartTerminal.route_id && t.id != startTerminalId)
                 .forEach(terminal => {
                     const option = document.createElement('option');
                     option.value = terminal.id;
-                    // Display the terminal name along with its route ID for clarity
-                    option.textContent = `${terminal.name} (Route: ${terminal.route_id})`;
+                    option.textContent = terminal.name;
                     endTerminalSelect.appendChild(option);
                 });
         }
@@ -1507,8 +1642,8 @@
                 return;
             }
 
-            const startTerminal = allTerminals.find(t => String(t.id) === String(startId));
-            const endTerminal = allTerminals.find(t => String(t.id) === String(endId));
+            const startTerminal = allTerminals.find(t => t.id == startId);
+            const endTerminal = allTerminals.find(t => t.id == endId);
 
             if (!navigator.geolocation) {
                 alert('Cannot draw route without current GPS location.');
