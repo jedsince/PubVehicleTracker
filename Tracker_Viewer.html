@@ -1,166 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚌 Secure Transport Sharer & Viewer</title>
-
-    <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
-    <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
-    
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    
-    <style>
-        body { margin: 0; padding: 0; font-family: Arial, sans-serif; overflow-x: hidden; }
-        #map { width: 100%; height: 100vh; position: absolute; top: 0; left: 0; cursor: default; }
-
-        /* --- HEADER & HAMBURGER MENU STYLES --- */
-        .header {
-            background-color: #007bff;
-            color: white;
-            padding: 10px 15px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            position: fixed; /* Fixed position over the map */
-            top: 0;
-            left: 0;
-            width: 100%;
-            z-index: 10; /* Above the map */
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        }
-        .header h1 {
-            font-size: 1.2em;
-            margin: 0;
-            flex-grow: 1;
-            text-align: center;
-        }
-
-        #menu-toggle-btn {
-            background: none;
-            border: none;
-            color: white;
-            font-size: 30px;
-            line-height: 1;
-            padding: 0 10px;
-            cursor: pointer;
-            z-index: 11;
-        }
-
-        /* --- SIDEBAR MENU STYLES --- */
-        #sidebar-menu {
-            position: fixed;
-            top: 0;
-            left: -300px; /* Hidden off-screen */
-            width: 280px;
-            height: 100%;
-            background-color: #f8f9fa;
-            color: #333;
-            z-index: 20; /* Above everything else */
-            box-shadow: 2px 0 5px rgba(0,0,0,0.5);
-            transition: left 0.3s ease-in-out;
-            padding: 20px 0;
-            overflow-y: auto;
-        }
-        #sidebar-menu.open {
-            left: 0;
-        }
-        #sidebar-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 15;
-            display: none;
-        }
-        #sidebar-overlay.open {
-            display: block;
-        }
-        .menu-content {
-            padding: 0 20px;
-        }
-        .menu-content h2, .menu-content h4 {
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid #ddd;
-        }
-        .menu-content h2:first-child, .menu-content h4:first-child {
-            border-top: none;
-            padding-top: 0;
-        }
-
-        /* Existing styles adapted for the menu */
-        .controls {
-            padding: 10px 0; /* Reduced padding for menu space */
-            background-color: transparent;
-            border-top: none;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            align-items: stretch;
-        }
-        #auth-container, #signup-container {
-            padding: 10px 0; 
-            text-align: center; 
-            background-color: transparent;
-            border-bottom: none;
-        }
-        .input-group { margin: 10px 0; }
-        .input-group input, .input-group select { width: 100%; }
-        .input-group > div { flex-direction: column; gap: 5px; }
-
-        /* Status and Toggle Button Positioning */
-        #status-bar {
-            position: fixed;
-            top: 55px; /* Below the main header */
-            left: 0;
-            width: 100%;
-            background-color: rgba(255, 255, 255, 0.9);
-            padding: 8px 15px;
-            z-index: 9; 
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        .share-btn { background-color: #28a745; color: white; }
-        .stop-btn { background-color: #dc3545; color: white; }
-        .status-text { font-weight: bold; }
-        
-        /* Vehicle/Terminal styles remain the same */
-        .direction-arrow {
-            width: 0;
-            height: 0;
-            border-left: 8px solid transparent;
-            border-right: 8px solid transparent;
-            border-bottom: 20px solid;
-            position: relative;
-            border-radius: 2px;
-            box-shadow: 0 0 5px rgba(0,0,0,0.5);
-        }
-        .terminal-marker {
-            background-color: #007bff; 
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            border: 2px solid #fff;
-            box-shadow: 0 0 5px rgba(0,0,0,0.5);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: white;
-            font-weight: bold;
-            font-size: 10px;
-        }
-    </style>
-</head>
 <body>
     
     <div class="header">
-        <button id="menu-toggle-btn" onclick="toggleSidebar()">☰</button>
-        <h1>Live Transport Viewer</h1>
-        <div style="width: 40px;"></div> 
-    </div>
+        </div>
 
     <div id="status-bar">
         <div id="status" class="status-text">Checking login status...</div>
@@ -169,97 +12,25 @@
     <div id="sidebar-menu">
         <div class="menu-content">
             
-            <div id="auth-container">
-                <h2>Location Sharer Login</h2>
-                <div id="login-error-message" style="color: #dc3545; font-weight: bold; margin-bottom: 10px;"></div>
-                
-                <div id="login-form-content" class="input-group">
-                    <input type="email" id="email" placeholder="Sharer Email">
-                    <input type="password" id="password" placeholder="Password">
-                    <div>
-                        <button id="loginButton">Login</button>
-                    </div>
-                    <p style="margin-top: 10px;">New user? 
-                        <a href="#" id="showSignupLink">Create an Account</a>
-                    </p>
-                </div>
-            </div>
-
-            <div id="signup-container" style="display:none;">
-                <h2>Create Sharer Account</h2>
-                <div class="input-group">
-                    <input type="text" id="signup-name" placeholder="Full Name" required>
-                    <input type="email" id="signup-email" placeholder="Email" required>
-                    <input type="password" id="signup-password" placeholder="Password (Min 6 chars)" required>
-                    
-                    <select id="signup-role">
-                        <option value="">-- I am a --</option>
-                        <option value="driver">Driver / Vehicle Owner</option>
-                        <option value="sharer_passenger">Passenger (to act as beacon)</option>
-                    </select>
-
-                    <input type="text" id="signup-tracking-id" placeholder="Assigned Vehicle ID (e.g., JEEP-001)" style="display:none;">
-
-                    <button id="signupButton" class="share-btn" style="width: 100%;">Sign Up</button>
-                    <p style="margin-top: 10px;">Already have an account? 
-                        <a href="#" id="showLoginLink">Go to Login</a>
-                    </p>
-                </div>
-            </div>
-            
             <div id="sharer-controls-container" style="display: none;">
                 <button id="toggleButton" class="share-btn" disabled style="width: 100%;">Start Sharing Location</button>
 
+                <div id="vehicle-selection-container" style="display: none; padding: 10px 0;">
+                    <h4>Select Vehicle to Track:</h4>
+                    <select id="routeToTrackSelect" style="margin-bottom: 5px;">
+                        <option value="">-- Start Location is Being Determined... --</option>
+                    </select>
+                    <select id="vehicleToTrackSelect" disabled>
+                        <option value="">-- Choose Vehicle on Selected Route --</option>
+                    </select>
+                    <button id="setVehicleButton" style="width: 100%; margin-top: 5px; background-color: #007bff;" disabled>Set as Beacon</button>
+                </div>
                 <div id="sharer-route-control" class="controls" style="flex-direction: column; align-items: stretch; gap: 10px;">
-                    <h4>Manual Trip Control</h4>
-                    <div style="display: flex; flex-direction: column; gap: 5px; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
-                        <label for="startTerminalSelect">Start Terminal:</label>
-                        <select id="startTerminalSelect">
-                            <option value="">-- Auto-Detect (Default) --</option>
-                        </select>
-                        
-                        <label for="endTerminalSelect">End Terminal:</label>
-                        <select id="endTerminalSelect" disabled>
-                            <option value="">-- Select Route & Destination --</option>
-                        </select>
-
-                        <button id="drawManualRouteButton" class="share-btn" style="background-color: #007bff;">Draw Route Manually</button>
-                        <button id="clearManualRouteButton" class="stop-btn">Clear Route</button>
                     </div>
-                </div>
-            </div>
-
-
-            <div id="terminal-tools-container" style="display: none;">
-                <h4 id="toggleTerminalMenuBtn" style="cursor: pointer; background-color: #007bff; color: white; padding: 10px; border-radius: 4px;">Terminal Tools ▼</h4>
-                
-                <div id="terminal-submenu" class="controls" style="display: none; flex-direction: column; align-items: stretch; gap: 10px;">
-                    
-                    <hr style="width: 100%;">
-
-                    <h4>Add New Terminal</h4>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <input type="text" id="terminalNameInput" placeholder="Name (e.g., Cubao Stop)">
-                        <input type="text" id="routeIdInput" placeholder="Route ID (e.g., R-1A)" style="flex-grow: 1;">
-                        <button id="captureGPSButton" class="share-btn">📍 Capture My GPS</button>
-                    </div>
-                    
-                    <button id="dropPinButton" class="share-btn">📌 Click Map to Drop Pin</button>
-                    <div id="pin-location-display" style="font-style: italic; color: #555; text-align: center;"></div>
-                    
-                    <button id="savePinButton" class="share-btn" disabled>💾 Save Pinned Terminal</button>
-                </div>
-            </div>
-
-            <hr style="width: 100%;">
-            <div class="controls" style="padding-top: 10px;">
-                <button id="signOutButton" style="background-color: #6c757d; color: white; display: none;">Sign Out</button>
             </div>
             
-        </div>
+            </div>
     </div>
-    <div id="sidebar-overlay" onclick="toggleSidebar()"></div>
-
     <div id='map'></div>
 
     <script>
@@ -279,6 +50,7 @@
         const PING_RATE_MS = 30000; 
         const MIN_STOP_TIME_MS = 180000; 
         const PROXIMITY_THRESHOLD_M = 100; 
+        const BEACON_TERMINAL_PROXIMITY_M = 500; // 🛑 New: 500m radius to find nearby terminals
 
         // --- GLOBAL STATE & IDS ---
         let intervalID = null; 
@@ -296,6 +68,7 @@
         const TRIP_ROUTE_SOURCE_ID = 'trip-route-source';
         const TRIP_ROUTE_LAYER_ID = 'trip-route-layer';
         let deviceOrientationHeading = null; 
+        let nearbyRoutes = []; // 🛑 New: Stores Route IDs near the passenger
 
         // --- DOM Elements & Supabase Client ---
         const sidebarMenu = document.getElementById('sidebar-menu');
@@ -323,7 +96,13 @@
         const drawManualRouteButton = document.getElementById('drawManualRouteButton');
         const clearManualRouteButton = document.getElementById('clearManualRouteButton');
         const sharerRouteControl = document.getElementById('sharer-route-control'); 
-        const loginErrorMessageDiv = document.getElementById('login-error-message'); // 🛑 NEW ELEMENT
+        const loginErrorMessageDiv = document.getElementById('login-error-message'); 
+        
+        // 🛑 NEW ELEMENTS FOR PASSENGER BEACON LOGIC
+        const vehicleSelectionContainer = document.getElementById('vehicle-selection-container');
+        const routeToTrackSelect = document.getElementById('routeToTrackSelect');
+        const vehicleToTrackSelect = document.getElementById('vehicleToTrackSelect');
+        const setVehicleButton = document.getElementById('setVehicleButton');
         
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         
@@ -411,7 +190,7 @@
                  map.flyTo({ center: newLngLat, speed: 0.5 }); 
             }
             if (!isCurrentUser) {
-                // 🛑 MODIFIED: Pass current location data along with the tracking ID
+                // 🛑 Pass current location data along with the tracking ID
                 fetchAndDisplayViewerRoute(trackingId, data.latitude, data.longitude); 
             }
         }
@@ -442,7 +221,7 @@
             console.log(`Loaded ${allTerminals.length} terminals and populated dropdowns.`);
         }
 
-        // 🛑 MODIFIED: fetchAndDisplayRoute now accepts currentLat, currentLon for dynamic routing
+        // 🛑 fetchAndDisplayRoute now accepts currentLat, currentLon for dynamic routing
         async function fetchAndDisplayRoute(startTerminal, endTerminal, currentLat, currentLon) {
             const startCoords = `${startTerminal.longitude},${startTerminal.latitude}`;
             const endCoords = `${endTerminal.longitude},${endTerminal.latitude}`;
@@ -450,10 +229,8 @@
             // NEW: Include the vehicle's current location as a via point
             const currentCoords = `${currentLon},${currentLat}`;
 
-            // Mapbox Directions API allows up to 25 waypoints
             const coordsString = `${startCoords};${currentCoords};${endCoords}`;
             
-            // UPDATED URL: Using three coordinates
             const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordsString}?geometries=geojson&access_token=${mapboxgl.accessToken}`;
 
             try {
@@ -470,7 +247,6 @@
                     const routeSource = map.getSource(TRIP_ROUTE_SOURCE_ID);
                     if (routeSource) {
                         routeSource.setData(geoJson);
-                        // console.log(`Route drawn successfully: ${startTerminal.name} -> Current Position -> ${endTerminal.name}`);
                     } else {
                         console.error(`ERROR: Map source '${TRIP_ROUTE_SOURCE_ID}' not found. Cannot draw route.`);
                     }
@@ -483,7 +259,7 @@
             }
         }
 
-        // 🛑 MODIFIED: fetchAndDisplayViewerRoute now accepts currentLat, currentLon
+        // 🛑 fetchAndDisplayViewerRoute now accepts currentLat, currentLon
         async function fetchAndDisplayViewerRoute(trackingId, currentLat, currentLon) { 
             clearDisplayedRoute(); 
 
@@ -503,8 +279,6 @@
             
             // MODIFIED CALL: Now uses the three-point route calculation
             fetchAndDisplayRoute(startTerminal, endTerminal, currentLat, currentLon); 
-            
-            // console.log(`Viewer: Displaying active trip for ${trackingId}: ${routeData.start_name} -> Current -> ${routeData.end_name}`);
         }
 
         function clearDisplayedRoute() {
@@ -550,8 +324,8 @@
              subscribeToLocationUpdates(); 
         });
 
-
         // --- PINNING AND TERMINAL MANAGEMENT ---
+        // ... (Functions handleMapClick, clearTempPin, savePinnedTerminal, captureAndSaveTerminal, writeTerminalToSupabase remain the same) ...
         function togglePinningMode() {
             isPinningMode = !isPinningMode;
             const button = document.getElementById('dropPinButton');
@@ -642,6 +416,77 @@
             }
         }
 
+        // --- PASSENGER BEACON LOGIC ---
+        
+        // 🛑 NEW: Step 1 - Get location and find nearby routes
+        function identifyNearbyRoutes() {
+            routeToTrackSelect.innerHTML = '<option value="">-- Searching for Nearby Terminals... --</option>';
+            if (!navigator.geolocation) {
+                routeToTrackSelect.innerHTML = '<option value="">Geolocation not supported.</option>';
+                return;
+            }
+
+            const options = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
+            navigator.geolocation.getCurrentPosition(position => {
+                const currentLat = position.coords.latitude;
+                const currentLon = position.coords.longitude;
+                
+                const nearbyTerminals = allTerminals.filter(terminal => {
+                    return getHaversineDistance(currentLat, currentLon, terminal.latitude, terminal.longitude) < BEACON_TERMINAL_PROXIMITY_M;
+                });
+
+                const routeIds = [...new Set(nearbyTerminals.map(t => t.route_id).filter(id => id))];
+                nearbyRoutes = routeIds;
+                
+                routeToTrackSelect.innerHTML = '<option value="">-- Select a Nearby Route --</option>';
+                if (routeIds.length === 0) {
+                    routeToTrackSelect.innerHTML = '<option value="">No active terminals within 500m.</option>';
+                } else {
+                    routeIds.forEach(id => {
+                        const option = document.createElement('option');
+                        option.value = id;
+                        option.textContent = `Route: ${id}`;
+                        routeToTrackSelect.appendChild(option);
+                    });
+                }
+                vehicleToTrackSelect.disabled = true;
+            }, err => {
+                routeToTrackSelect.innerHTML = `<option value="">GPS Error: ${err.message}</option>`;
+            }, options);
+        }
+        
+        // 🛑 NEW: Step 2 - Fetch active vehicles on the selected route
+        async function fetchActiveVehiclesByRoute(routeId) {
+            vehicleToTrackSelect.innerHTML = '<option value="">-- Fetching Vehicles... --</option>';
+            setVehicleButton.disabled = true;
+
+            const { data: activeRoutes, error: activeRoutesError } = await supabaseClient
+                .from('active_routes')
+                .select('tracking_id, start_name')
+                .eq('is_active', true)
+                .like('route_id', routeId + '%'); // Use LIKE to match the start of the route ID
+
+            if (activeRoutesError) {
+                console.error('Error fetching active routes:', activeRoutesError);
+                vehicleToTrackSelect.innerHTML = '<option value="">Error fetching vehicles.</option>';
+                return;
+            }
+
+            vehicleToTrackSelect.innerHTML = '<option value="">-- Select Vehicle --</option>';
+            if (activeRoutes.length === 0) {
+                vehicleToTrackSelect.innerHTML = '<option value="">No vehicles currently active on this route.</option>';
+                vehicleToTrackSelect.disabled = true;
+            } else {
+                activeRoutes.forEach(route => {
+                    const option = document.createElement('option');
+                    option.value = route.tracking_id;
+                    option.textContent = `${route.tracking_id} (From: ${route.start_name})`;
+                    vehicleToTrackSelect.appendChild(option);
+                });
+                vehicleToTrackSelect.disabled = false;
+            }
+        }
+
 
         // --- AUTHENTICATION & LOGIN/SIGNUP ---
         function toggleForms(showSignup) {
@@ -661,7 +506,7 @@
                 signupTrackingIdInput.setAttribute('required', 'required');
             } else {
                 signupTrackingIdInput.style.display = 'none';
-                signupTrackingIdInput.removeAttribute('required');
+                signupTrackingIdInput.removeAttribute('required'); // For passengers, tracking ID is optional
             }
         };
 
@@ -703,6 +548,7 @@
                 return;
             }
             if (role === 'driver' && trackingId) {
+                // Sharer ID is the driver's UUID, which will be used for RLS
                 const { error: vehicleError } = await supabaseClient
                     .from('vehicle_location')
                     .upsert({
@@ -724,7 +570,8 @@
             signOutButton.style.display = 'inline-block';
             sharerControlsContainer.style.display = 'none';
             terminalToolsContainer.style.display = 'none'; 
-            loginErrorMessageDiv.textContent = ''; // Clear error on successful login
+            loginErrorMessageDiv.textContent = ''; 
+            vehicleSelectionContainer.style.display = 'none'; // Default hidden
 
             // 2. Get Profile Data
             const { data: profileData, error: profileError } = await supabaseClient
@@ -743,33 +590,49 @@
             currentTrackingId = profileData.default_tracking_id;
 
             // 3. Determine Controls to Show
-            if (currentUserRole === 'admin') {
-                terminalToolsContainer.style.display = 'block'; 
-                toggleButton.disabled = true;
-                statusDiv.textContent = 'Admin logged in. Terminal Tools enabled. Sharing disabled.';
-                statusDiv.style.color = '#ffc107'; 
-            } 
-            
-            if (currentUserRole === 'driver' || currentUserRole === 'sharer_passenger') {
-                sharerControlsContainer.style.display = 'block'; 
+            sharerControlsContainer.style.display = 'block';
+
+            if (currentUserRole === 'driver') {
+                // DRIVER LOGIC: Use default vehicle ID, hide selection controls
+                vehicleSelectionContainer.style.display = 'none'; 
                 
                 if (currentTrackingId) {
                     toggleButton.disabled = false;
-                    statusDiv.textContent = `${currentUserRole} logged in as ${currentTrackingId}. Ready to share.`;
+                    statusDiv.textContent = `Driver logged in as ${currentTrackingId}. Ready to share.`;
+                    currentVehicleType = 'Jeepney'; 
                     statusDiv.style.color = '#007bff'; 
                 } else {
                     toggleButton.disabled = true;
-                    statusDiv.textContent = `Sharer logged in. A Vehicle ID must be manually assigned to share location.`;
-                    statusDiv.style.color = '#ffc107';
+                    statusDiv.textContent = `Driver logged in. ERROR: Vehicle ID missing. Contact Admin.`;
+                    statusDiv.style.color = '#dc3545';
                 }
+            } 
+            
+            else if (currentUserRole === 'sharer_passenger') {
+                // PASSENGER LOGIC: Must select a vehicle, show selection controls
+                vehicleSelectionContainer.style.display = 'block'; 
+                toggleButton.disabled = true; 
+                currentTrackingId = null; 
+                currentVehicleType = 'Jeepney'; 
+
+                statusDiv.textContent = `Passenger logged in. Locating nearby routes...`;
+                statusDiv.style.color = '#ffc107';
                 
-                if (ADMIN_SHARER_IDS.includes(user.id)) {
-                    terminalToolsContainer.style.display = 'block';
-                }
-            } else {
-                statusDiv.textContent = 'Login successful, but role is undefined. Sharing disabled.';
+                // 🛑 Start the beacon selection process
+                identifyNearbyRoutes();
+            }
+            
+            else if (currentUserRole === 'admin') {
+                terminalToolsContainer.style.display = 'block'; 
                 toggleButton.disabled = true;
-                statusDiv.style.color = '#dc3545';
+                sharerControlsContainer.style.display = 'none';
+                statusDiv.textContent = 'Admin logged in. Terminal Tools enabled. Sharing disabled.';
+                statusDiv.style.color = '#ffc107'; 
+            }
+            
+            // Allow admin access to terminal tools if a sharer ID is listed
+            if (ADMIN_SHARER_IDS.includes(user.id)) {
+                terminalToolsContainer.style.display = 'block';
             }
         }
         
@@ -881,7 +744,7 @@
                         currentTrip.identifiedStartTerminal = startTerminalToUse;
                         currentTrip.identifiedEndTerminal = endTerminalToUse; 
                         
-                        // 🛑 MODIFICATION HERE: Pass current coordinates to draw the route
+                        // Pass current coordinates to draw the route
                         fetchAndDisplayRoute(
                             startTerminalToUse, 
                             endTerminalToUse, 
@@ -899,7 +762,7 @@
                         currentTrip.isTrackingTrip = true;
                     }
                 }
-                // 🛑 NEW: If a trip is already tracking, update the route dynamically
+                // If a trip is already tracking, update the route dynamically
                 if (currentTrip.isTrackingTrip && currentTrip.identifiedStartTerminal && currentTrip.identifiedEndTerminal) {
                     fetchAndDisplayRoute(
                         currentTrip.identifiedStartTerminal, 
@@ -935,7 +798,7 @@
             
             if (updateError) {
                  console.error('Supabase update error:', updateError);
-                 statusDiv.textContent = 'ERROR: Update failed.'; 
+                 statusDiv.textContent = 'ERROR: Update failed. Check RLS policy.'; 
                  statusDiv.style.color = '#dc3545';
             } else if (!isMoving) {
                  statusDiv.textContent = `Stopped. Waiting to confirm trip end... Heading: ${finalHeading.toFixed(0)}°`;
@@ -973,7 +836,7 @@
 
         function startTracking() {
             if (!navigator.geolocation) { statusDiv.textContent = 'Geolocation is not supported by your browser.'; return; }
-            if (!currentTrackingId) { statusDiv.textContent = 'Please log in first and ensure a vehicle is assigned.'; return; }
+            if (!currentTrackingId) { statusDiv.textContent = 'Please select a vehicle ID or log in.'; return; }
             
             if (typeof DeviceOrientationEvent.requestPermission === 'function') {
                 DeviceOrientationEvent.requestPermission()
@@ -1033,6 +896,40 @@
         document.getElementById('captureGPSButton').onclick = captureAndSaveTerminal;
         document.getElementById('dropPinButton').onclick = togglePinningMode;
         document.getElementById('savePinButton').onclick = savePinnedTerminal;
+
+
+        // 🛑 NEW PASSENGER LISTENERS
+        routeToTrackSelect.onchange = function() {
+            const routeId = this.value;
+            if (routeId) {
+                fetchActiveVehiclesByRoute(routeId);
+                vehicleToTrackSelect.disabled = false;
+            } else {
+                vehicleToTrackSelect.innerHTML = '<option value="">-- Choose Vehicle on Selected Route --</option>';
+                vehicleToTrackSelect.disabled = true;
+                setVehicleButton.disabled = true;
+            }
+        };
+
+        vehicleToTrackSelect.onchange = function() {
+            setVehicleButton.disabled = !this.value;
+        };
+
+        setVehicleButton.onclick = function() {
+            const selectedId = vehicleToTrackSelect.value;
+            if (selectedId) {
+                currentTrackingId = selectedId;
+                // Vehicle type is assumed or defaulted for the passenger beacon
+                currentVehicleType = 'Jeepney'; 
+                toggleButton.disabled = false;
+                statusDiv.textContent = `Beacon set for ${currentTrackingId}. Press 'Start Sharing Location' to begin.`;
+                statusDiv.style.color = '#28a745';
+                toggleSidebar();
+            } else {
+                statusDiv.textContent = `Please select a valid Vehicle ID.`;
+                statusDiv.style.color = '#dc3545';
+            }
+        };
 
 
         // --- MANUAL TRIP CONTROL LISTENERS ---
