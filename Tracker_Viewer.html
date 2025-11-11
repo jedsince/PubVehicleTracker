@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚌 Secure Transport v.a0.409 Sharer & Viewer a0.2</title>
+    <title>🚌 Secure Transport v a0.410 Sharer & Viewer</title>
 
     <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
     <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
@@ -559,6 +559,18 @@
                 lat: parseFloat(rawLat.toFixed(precision)), 
                 lon: parseFloat(rawLon.toFixed(precision)) 
             }; 
+        }
+        
+        // --- GEOLOCATION ERROR HANDLER (FIX for ReferenceError) ---
+        function handleGeolocationError(err) {
+            console.error("Geolocation Error:", err);
+            
+            // Display a user-friendly error message on the status bar
+            statusDiv.textContent = `GPS Error (${err.code}): ${err.message}. Sharing Stopped.`;
+            statusDiv.style.color = '#dc3545';
+            
+            // Stop the location sharing process immediately to prevent further errors
+            stopLocationSharing(); 
         }
 
         // --- MAPBOX & TERMINAL DISPLAY ---
@@ -1412,6 +1424,7 @@
                 updateLocationInSupabase(position); 
 
                 intervalID = setInterval(() => {
+                    // **FIX**: The missing handleGeolocationError is now defined.
                     navigator.geolocation.getCurrentPosition(updateLocationInSupabase, handleGeolocationError, options);
                 }, PING_RATE_MS);
             }, handleGeolocationError, options);
@@ -1721,5 +1734,3 @@
     </script>
 </body>
 </html>
-
-
