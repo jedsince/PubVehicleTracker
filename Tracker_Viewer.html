@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚌 Secure Transport Sharer & Viewer a0.2</title>
+    <title>🚌 Secure Transport Sharer & Viewer a0.201</title>
 
     <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
     <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
@@ -783,15 +783,22 @@
             if (!isPinningMode) return;
             clearTempPin();
             const lat = e.lngLat.lat;
-            const lon = e.lngLat.lon;
+            // FIX APPLIED HERE: Use .lng for longitude from Mapbox event
+            const lon = e.lngLat.lng; 
+            
+            // Store for saving later
             tempPinLocation = { lat: lat, lon: lon };
+            
             const el = document.createElement('div');
             el.className = 'terminal-marker';
             el.textContent = '?'; 
             el.style.backgroundColor = '#ffc107'; 
+            
+            // Mapbox marker takes [longitude, latitude]
             tempTerminalMarker = new mapboxgl.Marker({ element: el, anchor: 'center' })
-                .setLngLat([lon, lat]) // FIX HERE: [longitude, latitude]
+                .setLngLat([lon, lat]) 
                 .addTo(map);
+                
             document.getElementById('pin-location-display').textContent = `Pin Dropped at: Lat ${lat.toFixed(4)}, Lon ${lon.toFixed(4)}`;
             document.getElementById('savePinButton').disabled = false;
         }
