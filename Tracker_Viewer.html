@@ -737,9 +737,6 @@
                 return;
             }
             currentTrackingId = selectedTrackingId;
-            // Note: This logic assumes a user who is a passenger is switching the map focus.
-            // If they are meant to BE the sharer, this entire section needs re-evaluation.
-            // For now, it's viewer-side.
 
             statusDiv.textContent = `Tracking Plate No. ${currentTrackingId}...`;
             statusDiv.style.color = '#007bff';
@@ -802,10 +799,10 @@
                 return;
             }
             
-            // 2. Insert into the public profile table (Assuming you have a 'profiles' table with RLS)
+            // 2. Insert into the public profile table (Table name corrected to user_profiles)
             const user = data.user;
             const { error: profileError } = await supabaseClient
-                .from('profiles')
+                .from('user_profiles') // ✅ CORRECTED HERE
                 .insert({ 
                     id: user.id, 
                     full_name: name, 
@@ -845,9 +842,9 @@
                 console.log("User is Admin.");
             }
             
-            // Fetch profile data to set role and tracking ID
+            // Fetch profile data (Table name corrected to user_profiles)
             const { data, error } = await supabaseClient
-                .from('profiles')
+                .from('user_profiles') // ✅ CORRECTED HERE
                 .select('role, tracking_id')
                 .eq('id', userId)
                 .single();
@@ -919,7 +916,7 @@
 
         function startLocationSharing() {
             if (!currentTrackingId) {
-                alert("Tracking ID not set. Please ensure your profile is correct.");
+                alert("Plate Number not set. Please ensure your profile is correct.");
                 return;
             }
             if (!navigator.geolocation) {
