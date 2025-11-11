@@ -11,66 +11,123 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
     <style>
-        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
-        #map { width: 100%; height: 60vh; cursor: default; }
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; overflow-x: hidden; }
+        #map { width: 100%; height: 100vh; position: absolute; top: 0; left: 0; cursor: default; }
+
+        /* --- HEADER & HAMBURGER MENU STYLES --- */
         .header {
             background-color: #007bff;
             color: white;
-            padding: 15px;
+            padding: 10px 15px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: fixed; /* Fixed position over the map */
+            top: 0;
+            left: 0;
+            width: 100%;
+            z-index: 10; /* Above the map */
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .header h1 {
+            font-size: 1.2em;
+            margin: 0;
+            flex-grow: 1;
             text-align: center;
         }
-        .controls {
-            padding: 10px 20px;
-            background-color: #f8f9fa;
-            border-top: 1px solid #ddd;
-            display: flex;
-            justify-content: space-around;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-        #auth-container, #signup-container {
-            padding: 20px; 
-            text-align: center; 
-            background-color: #e9ecef;
-            border-bottom: 2px solid #007bff;
-        }
-        .input-group input, .input-group button, .input-group select {
-            padding: 10px; 
-            margin: 5px 0;
-            border: 1px solid #ccc; 
-            border-radius: 4px;
-            width: 100%;
-            box-sizing: border-box;
-        }
-        .input-group {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        .input-group > div {
-             display: flex;
-             flex-wrap: wrap;
-             gap: 10px;
-             width: 100%;
-        }
-        .input-group > div > button {
-             flex-grow: 1;
-             width: auto;
+
+        #menu-toggle-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 30px;
+            line-height: 1;
+            padding: 0 10px;
+            cursor: pointer;
+            z-index: 11;
         }
 
-        button {
-            padding: 10px 20px;
-            font-size: 16px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background-color 0.3s;
+        /* --- SIDEBAR MENU STYLES --- */
+        #sidebar-menu {
+            position: fixed;
+            top: 0;
+            left: -300px; /* Hidden off-screen */
+            width: 280px;
+            height: 100%;
+            background-color: #f8f9fa;
+            color: #333;
+            z-index: 20; /* Above everything else */
+            box-shadow: 2px 0 5px rgba(0,0,0,0.5);
+            transition: left 0.3s ease-in-out;
+            padding: 20px 0;
+            overflow-y: auto;
+        }
+        #sidebar-menu.open {
+            left: 0;
+        }
+        #sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 15;
+            display: none;
+        }
+        #sidebar-overlay.open {
+            display: block;
+        }
+        .menu-content {
+            padding: 0 20px;
+        }
+        .menu-content h2, .menu-content h4 {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #ddd;
+        }
+        .menu-content h2:first-child, .menu-content h4:first-child {
+            border-top: none;
+            padding-top: 0;
+        }
+
+        /* Existing styles adapted for the menu */
+        .controls {
+            padding: 10px 0; /* Reduced padding for menu space */
+            background-color: transparent;
+            border-top: none;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: stretch;
+        }
+        #auth-container, #signup-container {
+            padding: 10px 0; 
+            text-align: center; 
+            background-color: transparent;
+            border-bottom: none;
+        }
+        .input-group { margin: 10px 0; }
+        .input-group input, .input-group select { width: 100%; }
+        .input-group > div { flex-direction: column; gap: 5px; }
+
+        /* Status and Toggle Button Positioning */
+        #status-bar {
+            position: fixed;
+            top: 55px; /* Below the main header */
+            left: 0;
+            width: 100%;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 8px 15px;
+            z-index: 9; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            text-align: center;
         }
         .share-btn { background-color: #28a745; color: white; }
         .stop-btn { background-color: #dc3545; color: white; }
         .status-text { font-weight: bold; }
         
+        /* Vehicle/Terminal styles remain the same */
         .direction-arrow {
             width: 0;
             height: 0;
@@ -81,7 +138,6 @@
             border-radius: 2px;
             box-shadow: 0 0 5px rgba(0,0,0,0.5);
         }
-
         .terminal-marker {
             background-color: #007bff; 
             width: 20px;
@@ -100,113 +156,124 @@
 </head>
 <body>
     
-    <div id="auth-container">
-        <h2>Location Sharer Login</h2>
-        <div id="login-form-content" class="input-group" style="max-width: 400px; margin: 0 auto;">
-            <input type="email" id="email" placeholder="Sharer Email">
-            <input type="password" id="password" placeholder="Password">
-            <div>
-                <button id="loginButton">Login</button>
-                <button id="signOutButton" style="background-color: #6c757d; color: white; display: none;">Sign Out</button>
-            </div>
-            <p style="margin-top: 10px;">New user? 
-                <a href="#" id="showSignupLink">Create an Account</a>
-            </p>
-        </div>
-    </div>
-
-    <div id="signup-container" style="display:none; padding: 20px; text-align: center; background-color: #e9ecef;">
-        <h2>Create Sharer Account</h2>
-        <div class="input-group" style="max-width: 400px; margin: 0 auto;">
-            <input type="text" id="signup-name" placeholder="Full Name" required>
-            <input type="email" id="signup-email" placeholder="Email" required>
-            <input type="password" id="signup-password" placeholder="Password (Min 6 chars)" required>
-            
-            <select id="signup-role">
-                <option value="">-- I am a --</option>
-                <option value="driver">Driver / Vehicle Owner</option>
-                <option value="sharer_passenger">Passenger (to act as beacon)</option>
-            </select>
-
-            <input type="text" id="signup-tracking-id" placeholder="Assigned Vehicle ID (e.g., JEEP-001)" style="display:none;">
-
-            <button id="signupButton" class="share-btn" style="width: 100%;">Sign Up</button>
-            <p style="margin-top: 10px;">Already have an account? 
-                <a href="#" id="showLoginLink">Go to Login</a>
-            </p>
-        </div>
-    </div>
-
     <div class="header">
+        <button id="menu-toggle-btn" onclick="toggleSidebar()">☰</button>
         <h1>Live Transport Viewer</h1>
-        <p>Login is required to share location, viewing is public.</p>
+        <div style="width: 40px;"></div> 
     </div>
 
-    <div class="controls">
-        <button id="toggleButton" class="share-btn" disabled>Start Sharing Location</button>
+    <div id="status-bar">
         <div id="status" class="status-text">Checking login status...</div>
     </div>
     
-    <div id="sharer-route-control" class="controls" style="display: none; flex-direction: column; align-items: stretch; gap: 10px;">
-        <h4>Manual Trip Control</h4>
-        <div style="display: flex; flex-direction: column; gap: 5px; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
-            <label for="startTerminalSelect">Start Terminal:</label>
-            <select id="startTerminalSelect">
-                <option value="">-- Auto-Detect (Default) --</option>
-            </select>
+    <div id="sidebar-menu">
+        <div class="menu-content">
             
-            <label for="endTerminalSelect">End Terminal:</label>
-            <select id="endTerminalSelect" disabled>
-                <option value="">-- Select Route & Destination --</option>
-            </select>
+            <div id="auth-container">
+                <h2>Location Sharer Login</h2>
+                <div id="login-form-content" class="input-group">
+                    <input type="email" id="email" placeholder="Sharer Email">
+                    <input type="password" id="password" placeholder="Password">
+                    <div>
+                        <button id="loginButton">Login</button>
+                    </div>
+                    <p style="margin-top: 10px;">New user? 
+                        <a href="#" id="showSignupLink">Create an Account</a>
+                    </p>
+                </div>
+            </div>
 
-            <button id="drawManualRouteButton" class="share-btn" style="background-color: #007bff;">Draw Route Manually</button>
-            <button id="clearManualRouteButton" class="stop-btn">Clear Route</button>
+            <div id="signup-container" style="display:none;">
+                <h2>Create Sharer Account</h2>
+                <div class="input-group">
+                    <input type="text" id="signup-name" placeholder="Full Name" required>
+                    <input type="email" id="signup-email" placeholder="Email" required>
+                    <input type="password" id="signup-password" placeholder="Password (Min 6 chars)" required>
+                    
+                    <select id="signup-role">
+                        <option value="">-- I am a --</option>
+                        <option value="driver">Driver / Vehicle Owner</option>
+                        <option value="sharer_passenger">Passenger (to act as beacon)</option>
+                    </select>
+
+                    <input type="text" id="signup-tracking-id" placeholder="Assigned Vehicle ID (e.g., JEEP-001)" style="display:none;">
+
+                    <button id="signupButton" class="share-btn" style="width: 100%;">Sign Up</button>
+                    <p style="margin-top: 10px;">Already have an account? 
+                        <a href="#" id="showLoginLink">Go to Login</a>
+                    </p>
+                </div>
+            </div>
+            
+            <div id="sharer-controls-container" style="display: none;">
+                <button id="toggleButton" class="share-btn" disabled style="width: 100%;">Start Sharing Location</button>
+
+                <div id="sharer-route-control" class="controls" style="flex-direction: column; align-items: stretch; gap: 10px;">
+                    <h4>Manual Trip Control</h4>
+                    <div style="display: flex; flex-direction: column; gap: 5px; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
+                        <label for="startTerminalSelect">Start Terminal:</label>
+                        <select id="startTerminalSelect">
+                            <option value="">-- Auto-Detect (Default) --</option>
+                        </select>
+                        
+                        <label for="endTerminalSelect">End Terminal:</label>
+                        <select id="endTerminalSelect" disabled>
+                            <option value="">-- Select Route & Destination --</option>
+                        </select>
+
+                        <button id="drawManualRouteButton" class="share-btn" style="background-color: #007bff;">Draw Route Manually</button>
+                        <button id="clearManualRouteButton" class="stop-btn">Clear Route</button>
+                    </div>
+                </div>
+            </div>
+
+
+            <div id="terminal-tools-container" style="display: none;">
+                <h4 id="toggleTerminalMenuBtn" style="cursor: pointer; background-color: #007bff; color: white; padding: 10px; border-radius: 4px;">Terminal Tools ▼</h4>
+                
+                <div id="terminal-submenu" class="controls" style="display: none; flex-direction: column; align-items: stretch; gap: 10px;">
+                    
+                    <hr style="width: 100%;">
+
+                    <h4>Add New Terminal</h4>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <input type="text" id="terminalNameInput" placeholder="Name (e.g., Cubao Stop)">
+                        <input type="text" id="routeIdInput" placeholder="Route ID (e.g., R-1A)" style="flex-grow: 1;">
+                        <button id="captureGPSButton" class="share-btn">📍 Capture My GPS</button>
+                    </div>
+                    
+                    <button id="dropPinButton" class="share-btn">📌 Click Map to Drop Pin</button>
+                    <div id="pin-location-display" style="font-style: italic; color: #555; text-align: center;"></div>
+                    
+                    <button id="savePinButton" class="share-btn" disabled>💾 Save Pinned Terminal</button>
+                </div>
+            </div>
+
+            <hr style="width: 100%;">
+            <div class="controls" style="padding-top: 10px;">
+                <button id="signOutButton" style="background-color: #6c757d; color: white; display: none;">Sign Out</button>
+            </div>
+            
         </div>
     </div>
-    <div id="terminal-menu-container" class="controls" style="display: none;">
-        <button id="toggleTerminalMenuBtn" class="share-btn">Terminal Tools ▼</button>
-    </div>
+    <div id="sidebar-overlay" onclick="toggleSidebar()"></div>
 
-    <div id="terminal-submenu" class="controls" style="display: none; flex-direction: column; align-items: stretch; gap: 10px;">
-        
-        <hr style="width: 100%;">
-
-        <h4>Add New Terminal</h4>
-        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-            <input type="text" id="terminalNameInput" placeholder="Name (e.g., Cubao Stop)">
-            <input type="text" id="routeIdInput" placeholder="Route ID (e.g., R-1A)" style="flex-grow: 1;">
-            <button id="captureGPSButton" class="share-btn">📍 Capture My GPS</button>
-        </div>
-        
-        <button id="dropPinButton" class="share-btn">📌 Click Map to Drop Pin</button>
-        <div id="pin-location-display" style="font-style: italic; color: #555; text-align: center;"></div>
-        
-        <button id="savePinButton" class="share-btn" disabled>💾 Save Pinned Terminal</button>
-    </div>
     <div id='map'></div>
 
     <script>
         // --- CONFIGURATION ---
-        // 🛑 NOTE: Replace these with your actual Supabase and Mapbox keys!
         const SUPABASE_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
         mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
         
         // 🛑 IMPORTANT: Update these UUIDs with your Supabase auth.users IDs for Admin access.
         const ADMIN_SHARER_IDS = [
-            '20d2c77d-4177-44f2-98ed-7389c9913000', // Example Admin 1 ID - REPLACE THIS
-            '8a0e8d0d-2e11-4f9e-9b37-2917d598377a'  // Example Admin 2 ID - REPLACE THIS
+            '20d2c77d-4177-44f2-98ed-7389c9913000', 
+            '8a0e8d0d-2e11-4f9e-9b37-2917d598377a'  
         ]; 
         
         const DEFAULT_CENTER = [121.0284546, 14.928021]; 
-        
-        const SPEED_THRESHOLDS = {
-            FAST: 8.33, 
-            MODERATE: 2.78, 
-            SLOW: 0.5 
-        };
-        
+        const SPEED_THRESHOLDS = { FAST: 8.33, MODERATE: 2.78, SLOW: 0.5 };
         const PING_RATE_MS = 30000; 
         const MIN_STOP_TIME_MS = 180000; 
         const PROXIMITY_THRESHOLD_M = 100; 
@@ -214,42 +281,32 @@
         // --- GLOBAL STATE & IDS ---
         let intervalID = null; 
         let isTracking = false;
-        
         const activeMarkers = new Map(); 
         const activeTerminalMarkers = new Map(); 
-
         let currentTrackingId = null; 
         let currentVehicleType = null;
         let allTerminals = []; 
         let currentUserRole = null;
-        
-        let currentTrip = {
-            isTrackingTrip: false, 
-            startPoint: null,      
-            lastStop: null,        
-            stopTimer: null,
-            identifiedStartTerminal: null, 
-            identifiedEndTerminal: null   
-        };
-
+        let currentTrip = { isTrackingTrip: false, startPoint: null, lastStop: null, stopTimer: null, identifiedStartTerminal: null, identifiedEndTerminal: null };
         let isPinningMode = false;
         let tempTerminalMarker = null;
         let tempPinLocation = null;
-
         const TRIP_ROUTE_SOURCE_ID = 'trip-route-source';
         const TRIP_ROUTE_LAYER_ID = 'trip-route-layer';
-
+        let deviceOrientationHeading = null; 
 
         // --- DOM Elements & Supabase Client ---
+        const sidebarMenu = document.getElementById('sidebar-menu');
+        const sidebarOverlay = document.getElementById('sidebar-overlay');
         const toggleButton = document.getElementById('toggleButton');
         const statusDiv = document.getElementById('status');
         const authContainer = document.getElementById('auth-container');
+        const sharerControlsContainer = document.getElementById('sharer-controls-container');
+        const terminalToolsContainer = document.getElementById('terminal-tools-container');
         const loginButton = document.getElementById('loginButton');
         const emailInput = document.getElementById('email'); 
         const passwordInput = document.getElementById('password'); 
         const signOutButton = document.getElementById('signOutButton'); 
-
-        // NEW SIGNUP ELEMENTS
         const signupContainer = document.getElementById('signup-container');
         const showSignupLink = document.getElementById('showSignupLink');
         const showLoginLink = document.getElementById('showLoginLink');
@@ -259,21 +316,34 @@
         const signupPasswordInput = document.getElementById('signup-password');
         const signupRoleSelect = document.getElementById('signup-role');
         const signupTrackingIdInput = document.getElementById('signup-tracking-id');
-        
-        // Menu Elements
-        const terminalMenuContainer = document.getElementById('terminal-menu-container');
-        const sharerRouteControl = document.getElementById('sharer-route-control'); 
-
-        // Manual Select Elements
         const startTerminalSelect = document.getElementById('startTerminalSelect');
         const endTerminalSelect = document.getElementById('endTerminalSelect');
         const drawManualRouteButton = document.getElementById('drawManualRouteButton');
         const clearManualRouteButton = document.getElementById('clearManualRouteButton');
-
+        const sharerRouteControl = document.getElementById('sharer-route-control'); 
+        
         const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         
+        // --- SIDEBAR TOGGLE FUNCTION ---
+        function toggleSidebar() {
+            sidebarMenu.classList.toggle('open');
+            sidebarOverlay.classList.toggle('open');
+            // Hide menu on interaction if necessary, though login/logout handles this better.
+        }
+
+        // --- DEVICE ORIENTATION ---
+        function handleDeviceOrientation(event) {
+            let heading = event.alpha;
+            if (typeof event.webkitCompassHeading !== 'undefined') {
+                heading = event.webkitCompassHeading;
+            }
+            if (heading !== null) {
+                deviceOrientationHeading = heading < 0 ? 360 + heading : heading;
+            }
+        }
+        window.addEventListener('deviceorientation', handleDeviceOrientation, true);
+        
         // --- UTILITY FUNCTIONS ---
-            
         function getSpeedColor(speed) {
             if (speed >= SPEED_THRESHOLDS.FAST) return '#28a745'; 
             if (speed >= SPEED_THRESHOLDS.MODERATE) return '#ffc107'; 
@@ -287,12 +357,8 @@
             const φ2 = lat2 * Math.PI/180;
             const Δφ = (lat2-lat1) * Math.PI/180;
             const Δλ = (lon2-lon1) * Math.PI/180;
-
-            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-                      Math.cos(φ1) * Math.cos(φ2) *
-                      Math.sin(Δλ/2) * Math.sin(Δλ/2);
+            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
             const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
             return R * c;
         }
         
@@ -304,39 +370,30 @@
             }; 
         }
 
-
         // --- MAPBOX & TERMINAL DISPLAY ---
-        
         function updateMarker(data) {
             const trackingId = data.tracking_id;
             if (!data.latitude || !data.longitude || !trackingId) return; 
-
             const type = data.vehicle_type || 'default';
             const newLngLat = [data.longitude, data.latitude];
             const speed = data.speed || 0;
             const heading = data.heading || 0; 
-
             const arrowColor = getSpeedColor(speed);
             let marker = activeMarkers.get(trackingId);
             
             if (!marker) {
                 const el = document.createElement('div');
                 el.className = 'direction-arrow';
-
                 marker = new mapboxgl.Marker({ element: el, anchor: 'center' }) 
                     .setLngLat(newLngLat)
                     .setPopup(new mapboxgl.Popup({ offset: 25 })) 
                     .addTo(map);
-
                 activeMarkers.set(trackingId, marker);
             }
-
             const markerElement = marker.getElement();
             markerElement.style.borderBottomColor = arrowColor;
             markerElement.style.transform = `rotate(${heading}deg)`;
-
             const speedKPH = speed * 3.6;
-
             marker.setLngLat(newLngLat)
                   .getPopup()
                   .setHTML(`
@@ -345,47 +402,33 @@
                   `);
             
             const isCurrentUser = isTracking && trackingId === currentTrackingId;
-
             if (isCurrentUser) {
                  map.flyTo({ center: newLngLat, speed: 0.5 });
             } else {
                  map.flyTo({ center: newLngLat, speed: 0.5 }); 
             }
-            
             if (!isCurrentUser) {
                 fetchAndDisplayViewerRoute(trackingId); 
             }
         }
 
         async function fetchAndDisplayAllTerminals() {
-            const { data, error } = await supabaseClient
-                .from('terminals')
-                .select('*');
-
-            if (error) {
-                console.error('Error fetching terminals:', error.message);
-                return;
-            }
-
-            // --- Populate Dropdowns ---
+            const { data, error } = await supabaseClient.from('terminals').select('*');
+            if (error) { console.error('Error fetching terminals:', error.message); return; }
             startTerminalSelect.innerHTML = '<option value="">-- Auto-Detect (Default) --</option>';
             endTerminalSelect.innerHTML = '<option value="">-- Select Route & Destination --</option>';
             endTerminalSelect.disabled = true;
-
             activeTerminalMarkers.forEach(marker => marker.remove());
             activeTerminalMarkers.clear();
-
             allTerminals = data;
             allTerminals.forEach(terminal => {
                 const option = document.createElement('option');
                 option.value = terminal.id;
                 option.textContent = `${terminal.name} (Route: ${terminal.route_id || 'N/A'})`;
                 startTerminalSelect.appendChild(option);
-
                 const el = document.createElement('div');
                 el.className = 'terminal-marker';
                 el.textContent = terminal.name[0].toUpperCase();
-
                 const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
                     .setLngLat([terminal.longitude, terminal.latitude])
                     .setPopup(new mapboxgl.Popup({ offset: 25 }).setHTML(`<b>${terminal.name}</b><br>Route ID: ${terminal.route_id || 'N/A'}`))
@@ -398,20 +441,13 @@
         async function fetchAndDisplayRoute(startTerminal, endTerminal) {
             const startCoords = `${startTerminal.longitude},${startTerminal.latitude}`;
             const endCoords = `${endTerminal.longitude},${endTerminal.latitude}`;
-            
             const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${startCoords};${endCoords}?geometries=geojson&access_token=${mapboxgl.accessToken}`;
-
             try {
                 const response = await fetch(url);
                 const data = await response.json();
-
                 if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
                     const route = data.routes[0].geometry;
-                    const geoJson = {
-                        type: 'FeatureCollection',
-                        features: [{ type: 'Feature', geometry: route }]
-                    };
-                    
+                    const geoJson = { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: route }] };
                     const routeSource = map.getSource(TRIP_ROUTE_SOURCE_ID);
                     if (routeSource) {
                         routeSource.setData(geoJson);
@@ -419,7 +455,6 @@
                     } else {
                         console.error(`ERROR: Map source '${TRIP_ROUTE_SOURCE_ID}' not found. Cannot draw route.`);
                     }
-
                 } else {
                     console.warn('Mapbox Directions API error:', data.code, data.message || 'Unknown error');
                 }
@@ -430,33 +465,19 @@
 
         async function fetchAndDisplayViewerRoute(trackingId) {
             clearDisplayedRoute(); 
-
-            // NOTE: .single() removed to prevent the 406 Not Acceptable error
             const { data, error } = await supabaseClient
                 .from('active_routes')
                 .select('*')
                 .eq('tracking_id', trackingId)
                 .eq('is_active', true); 
-
-            if (error) {
-                console.error('Error fetching viewer route:', error.message);
-                return;
-            }
-            
-            if (!data || data.length === 0) {
-                return; // No active route found for this tracking ID
-            }
-
+            if (error) { console.error('Error fetching viewer route:', error.message); return; }
+            if (!data || data.length === 0) { return; }
             const routeData = data[0]; 
-
             const startTerminal = { latitude: routeData.start_lat, longitude: routeData.start_lon, name: routeData.start_name };
             const endTerminal = { latitude: routeData.end_lat, longitude: routeData.end_lon, name: routeData.end_name };
-            
             fetchAndDisplayRoute(startTerminal, endTerminal);
-            
             console.log(`Viewer: Displaying active trip for ${trackingId}: ${routeData.start_name} to ${routeData.end_name}`);
         }
-
 
         function clearDisplayedRoute() {
             if (map.getSource(TRIP_ROUTE_SOURCE_ID)) {
@@ -464,26 +485,17 @@
             }
         }
 
-        // --- REAL-TIME SUBSCRIPTION ---
         function subscribeToLocationUpdates() { 
             supabaseClient.channel('all_vehicles') 
-                .on(
-                    'postgres_changes',
-                    { event: 'UPDATE', schema: 'public', table: 'vehicle_location' }, 
-                    (payload) => {
-                        updateMarker(payload.new);
-                    }
-                )
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'vehicle_location' }, (payload) => {
+                    updateMarker(payload.new);
+                })
                 .subscribe();
             
             supabaseClient.channel('all_terminals')
-                .on(
-                    'postgres_changes',
-                    { event: '*', schema: 'public', table: 'terminals' }, 
-                    (payload) => {
-                        fetchAndDisplayAllTerminals();
-                    }
-                )
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'terminals' }, (payload) => {
+                    fetchAndDisplayAllTerminals();
+                })
                 .subscribe();
         }
 
@@ -494,14 +506,9 @@
             center: DEFAULT_CENTER,
             zoom: 12
         });
-        
         map.on('click', handleMapClick);
-
         map.on('load', async () => {
-             map.addSource(TRIP_ROUTE_SOURCE_ID, {
-                type: 'geojson',
-                data: { type: 'FeatureCollection', features: [] }
-             });
+             map.addSource(TRIP_ROUTE_SOURCE_ID, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
              map.addLayer({
                 id: TRIP_ROUTE_LAYER_ID,
                 type: 'line',
@@ -509,29 +516,26 @@
                 layout: { 'line-join': 'round', 'line-cap': 'round' },
                 paint: { 'line-color': '#0099ff', 'line-width': 6, 'line-opacity': 0.7 }
              });
-             
              const { data: vehicleData } = await supabaseClient.from('vehicle_location').select('*');
              if (vehicleData) vehicleData.forEach(updateMarker);
-             
              await fetchAndDisplayAllTerminals();
              subscribeToLocationUpdates(); 
         });
 
 
-        // --- PINNING AND TERMINAL MANAGEMENT (Unchanged) ---
-
+        // --- PINNING AND TERMINAL MANAGEMENT ---
         function togglePinningMode() {
             isPinningMode = !isPinningMode;
             const button = document.getElementById('dropPinButton');
             const display = document.getElementById('pin-location-display');
             const mapCanvas = map.getCanvasContainer();
-
             if (isPinningMode) {
                 button.textContent = '❌ Cancel Pin Drop';
                 button.classList.remove('share-btn');
                 button.classList.add('stop-btn');
                 display.textContent = 'Pin Drop mode is ON. Click map to place terminal.';
                 mapCanvas.style.cursor = 'crosshair';
+                toggleSidebar(); // Hide menu to allow map interaction
             } else {
                 button.textContent = '📌 Click Map to Drop Pin';
                 button.classList.remove('stop-btn');
@@ -543,22 +547,17 @@
 
         function handleMapClick(e) {
             if (!isPinningMode) return;
-
             clearTempPin();
-
             const lat = e.lngLat.lat;
             const lon = e.lngLat.lng;
             tempPinLocation = { lat: lat, lon: lon };
-
             const el = document.createElement('div');
             el.className = 'terminal-marker';
             el.textContent = '?'; 
             el.style.backgroundColor = '#ffc107'; 
-
             tempTerminalMarker = new mapboxgl.Marker({ element: el, anchor: 'center' })
                 .setLngLat([lon, lat])
                 .addTo(map);
-
             document.getElementById('pin-location-display').textContent = `Pin Dropped at: Lat ${lat.toFixed(4)}, Lon ${lon.toFixed(4)}`;
             document.getElementById('savePinButton').disabled = false;
         }
@@ -576,26 +575,21 @@
         function savePinnedTerminal() {
             const terminalName = document.getElementById('terminalNameInput').value;
             const routeId = document.getElementById('routeIdInput').value.toUpperCase();
-
             if (!terminalName) { alert("Please enter a name for the new terminal!"); return; }
             if (!tempPinLocation) { alert("No pin dropped. Click the map first!"); return; }
-
             writeTerminalToSupabase(terminalName, tempPinLocation.lat, tempPinLocation.lon, routeId);
-            
             togglePinningMode();
         }
 
         function captureAndSaveTerminal() {
             const terminalName = document.getElementById('terminalNameInput').value;
             const routeId = document.getElementById('routeIdInput').value.toUpperCase();
-            
             if (!terminalName) { alert("Please enter a name!"); return; }
             if (!navigator.geolocation) { alert('Geolocation not supported.'); return; }
-
             const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
-
             navigator.geolocation.getCurrentPosition(async (position) => {
                 await writeTerminalToSupabase(terminalName, position.coords.latitude, position.coords.longitude, routeId);
+                toggleSidebar(); // Close menu after action
             }, (err) => {
                 alert(`Could not get GPS location: ${err.message}`);
             }, options);
@@ -603,16 +597,11 @@
         
         async function writeTerminalToSupabase(name, lat, lon, routeId) {
             statusDiv.textContent = `Attempting to save ${name} (Route ${routeId || 'N/A'})...`;
-            
             const { error } = await supabaseClient
                 .from('terminals')
                 .insert({
-                    name: name,
-                    latitude: lat,
-                    longitude: lon,
-                    route_id: routeId || null 
+                    name: name, latitude: lat, longitude: lon, route_id: routeId || null 
                 });
-
             if (error) {
                 console.error('Terminal save error:', error);
                 statusDiv.textContent = `ERROR saving terminal: ${error.message}`;
@@ -626,8 +615,7 @@
         }
 
 
-        // --- AUTHENTICATION & LOGIN/SIGNUP (Updated for Multi-Role) ---
-        
+        // --- AUTHENTICATION & LOGIN/SIGNUP ---
         function toggleForms(showSignup) {
             if (showSignup) {
                 authContainer.style.display = 'none';
@@ -654,55 +642,29 @@
             const password = signupPasswordInput.value.trim();
             const role = signupRoleSelect.value;
             const trackingId = signupTrackingIdInput.value.trim().toUpperCase() || null;
-
-            if (!name || !email || !password || !role) {
-                statusDiv.textContent = 'Please fill out all required fields and select a role.';
-                statusDiv.style.color = '#dc3545';
-                return;
-            }
-            if (role === 'driver' && !trackingId) {
-                statusDiv.textContent = 'Drivers must enter an assigned Vehicle ID.';
-                statusDiv.style.color = '#dc3545';
-                return;
-            }
-
+            if (!name || !email || !password || !role) { statusDiv.textContent = 'Please fill out all required fields and select a role.'; statusDiv.style.color = '#dc3545'; return; }
+            if (role === 'driver' && !trackingId) { statusDiv.textContent = 'Drivers must enter an assigned Vehicle ID.'; statusDiv.style.color = '#dc3545'; return; }
             statusDiv.textContent = 'Attempting to create account...';
 
-            // 1. Supabase Auth Signup
             const { data: authData, error: authError } = await supabaseClient.auth.signUp({
-                email,
-                password,
-                options: { data: { full_name: name } }
+                email, password, options: { data: { full_name: name } }
             });
 
-            if (authError) {
-                statusDiv.textContent = `Signup Failed: ${authError.message}`;
-                statusDiv.style.color = '#dc3545';
-                return;
-            }
-            
-            // 🛑 CRITICAL FIX: Ensure the session is loaded for the next API call (to prevent 401 Unauthorized)
+            if (authError) { statusDiv.textContent = `Signup Failed: ${authError.message}`; statusDiv.style.color = '#dc3545'; return; }
             const { data: { session } } = await supabaseClient.auth.getSession();
             
             if (!session) {
-                // This means email confirmation is required AND the instant login failed.
                 statusDiv.textContent = 'Account created, but could not establish an active session immediately. Please check your email to confirm your account, then log in.';
                 statusDiv.style.color = '#dc3545';
-                toggleForms(false); // Switch back to login form
+                toggleForms(false); 
                 return;
             }
-            
             const userId = session.user.id; 
 
-            // 2. Insert Profile Data (Requires RLS: authenticated role, CHECK Expression: auth.uid() = id)
             const { error: profileError } = await supabaseClient
                 .from('user_profiles')
                 .insert({
-                    id: userId,
-                    full_name: name,
-                    role: role,
-                    default_tracking_id: trackingId,
-                    is_active: true
+                    id: userId, full_name: name, role: role, default_tracking_id: trackingId, is_active: true
                 });
 
             if (profileError) {
@@ -711,41 +673,30 @@
                 statusDiv.style.color = '#dc3545';
                 return;
             }
-
-            // 3. Optional: Insert initial vehicle_location record for drivers
             if (role === 'driver' && trackingId) {
                 const { error: vehicleError } = await supabaseClient
                     .from('vehicle_location')
                     .upsert({
-                        tracking_id: trackingId,
-                        sharer_id: userId,
-                        vehicle_type: 'Jeepney', 
-                        latitude: DEFAULT_CENTER[1],
-                        longitude: DEFAULT_CENTER[0]
+                        tracking_id: trackingId, sharer_id: userId, vehicle_type: 'Jeepney', latitude: DEFAULT_CENTER[1], longitude: DEFAULT_CENTER[0]
                     });
-                
-                if (vehicleError) {
-                    console.warn('Could not assign vehicle location on signup:', vehicleError);
-                }
+                if (vehicleError) { console.warn('Could not assign vehicle location on signup:', vehicleError); }
             }
             
             statusDiv.textContent = 'SUCCESS! Account created and logged in.';
             statusDiv.style.color = '#28a745';
-            
-            // Now that we have a session, initialize the sharer session
             initializeSharerSession(session.user);
+            toggleSidebar(); // Close menu after successful signup
         }
 
         async function initializeSharerSession(user) {
-            // Reset visibility for a fresh state
-            terminalMenuContainer.style.display = 'none';
-            sharerRouteControl.style.display = 'none';
-            signOutButton.style.display = 'none';
-            toggleButton.disabled = true;
-            authContainer.style.display = 'block'; 
-            signupContainer.style.display = 'none'; // Ensure signup form is hidden
+            // 1. Reset Visibility
+            authContainer.style.display = 'none';
+            signupContainer.style.display = 'none'; 
+            signOutButton.style.display = 'inline-block';
+            sharerControlsContainer.style.display = 'none';
+            terminalToolsContainer.style.display = 'none'; 
 
-            // 1. Get the user's role and default tracking ID from the new table
+            // 2. Get Profile Data
             const { data: profileData, error: profileError } = await supabaseClient
                 .from('user_profiles')
                 .select('role, default_tracking_id')
@@ -755,48 +706,37 @@
             if (profileError || !profileData) {
                  statusDiv.textContent = 'Login successful, but user profile not found. Contact Admin.';
                  statusDiv.style.color = '#dc3545';
-                 signOutButton.style.display = 'inline-block';
                  return;
             }
 
             currentUserRole = profileData.role;
             currentTrackingId = profileData.default_tracking_id;
 
-            // 2. Determine what to show based on role
-            authContainer.style.display = 'none'; 
-            signOutButton.style.display = 'inline-block'; 
-
+            // 3. Determine Controls to Show
             if (currentUserRole === 'admin') {
-                terminalMenuContainer.style.display = 'flex'; 
+                terminalToolsContainer.style.display = 'block'; 
                 toggleButton.disabled = true;
                 statusDiv.textContent = 'Admin logged in. Terminal Tools enabled. Sharing disabled.';
                 statusDiv.style.color = '#ffc107'; 
-                return;
             } 
             
-            // If the user is a driver or passenger sharer
             if (currentUserRole === 'driver' || currentUserRole === 'sharer_passenger') {
-                sharerRouteControl.style.display = 'flex'; // Show Manual Route Controls
+                sharerControlsContainer.style.display = 'block'; 
                 
-                // If they have a default tracking ID, they can start sharing
                 if (currentTrackingId) {
                     toggleButton.disabled = false;
                     statusDiv.textContent = `${currentUserRole} logged in as ${currentTrackingId}. Ready to share.`;
                     statusDiv.style.color = '#007bff'; 
                 } else {
-                    // Sharer without a specific vehicle assigned yet (e.g., general passenger sharer)
                     toggleButton.disabled = true;
                     statusDiv.textContent = `Sharer logged in. A Vehicle ID must be manually assigned to share location.`;
                     statusDiv.style.color = '#ffc107';
                 }
                 
-                // Admins who also have a vehicle get the Admin menu as well
                 if (ADMIN_SHARER_IDS.includes(user.id)) {
-                    terminalMenuContainer.style.display = 'flex';
+                    terminalToolsContainer.style.display = 'block';
                 }
-
             } else {
-                // Unknown or unhandled role
                 statusDiv.textContent = 'Login successful, but role is undefined. Sharing disabled.';
                 toggleButton.disabled = true;
                 statusDiv.style.color = '#dc3545';
@@ -813,26 +753,18 @@
             if (error) {
                 statusDiv.textContent = `Login Failed: ${error.message}`;
                 statusDiv.style.color = '#dc3545';
-                signOutButton.style.display = 'none'; 
             } else {
                 const { data: { user } } = await supabaseClient.auth.getUser();
                 if (user) {
                     initializeSharerSession(user);
+                    toggleSidebar(); // Close menu after successful login
                 }
             }
         }
 
         async function handleSignOut() { 
             const { error } = await supabaseClient.auth.signOut();
-
-            if (error) {
-                console.error('Sign Out Error:', error);
-                statusDiv.textContent = `Sign Out Error: ${error.message}`;
-                statusDiv.style.color = '#dc3545';
-                return;
-            }
-
-            // Reset all application state
+            if (error) { console.error('Sign Out Error:', error); statusDiv.textContent = `Sign Out Error: ${error.message}`; statusDiv.style.color = '#dc3545'; return; }
             stopTracking(); 
             currentTrackingId = null;
             currentVehicleType = null;
@@ -843,34 +775,41 @@
             signupContainer.style.display = 'none'; 
             signOutButton.style.display = 'none'; 
             toggleButton.disabled = true;
-            terminalMenuContainer.style.display = 'none'; 
-            sharerRouteControl.style.display = 'none';
+            sharerControlsContainer.style.display = 'none';
+            terminalToolsContainer.style.display = 'none'; 
             
             statusDiv.textContent = 'Signed out successfully. Viewing live updates publicly.';
             statusDiv.style.color = '#007bff';
+            toggleSidebar(); // Close menu after sign out
         }
         
 
-        // --- TRACKING SENDER LOGIC (Minor Updates) ---
+        // --- TRACKING SENDER LOGIC ---
 
         async function success(position) {
-            // ... (rest of the position data extraction) ...
             const rawLat = position.coords.latitude;
             const rawLon = position.coords.longitude;
             const rawSpeed = position.coords.speed || 0;
-            const rawHeading = position.coords.heading || 0;
+            const gpsHeading = position.coords.heading; 
             const snappedLocation = simpleSnap(rawLat, rawLon, position.coords.accuracy); 
             const isMoving = rawSpeed > SPEED_THRESHOLDS.SLOW;
 
+            let finalHeading = 0;
+            if (rawSpeed > SPEED_THRESHOLDS.SLOW && gpsHeading !== null) {
+                finalHeading = gpsHeading;
+            } else if (deviceOrientationHeading !== null) {
+                finalHeading = deviceOrientationHeading;
+            } else {
+                finalHeading = 0;
+            }
+
             const manualStartId = startTerminalSelect.value;
             const manualEndId = endTerminalSelect.value;
-            
             let manualStartTerminal = null;
             let manualEndTerminal = null;
-
             if (manualStartId && manualEndId) {
                 manualStartTerminal = allTerminals.find(t => t.id == manualStartId);
-                manualEndTerminal = allTerminals.find(t => t.id == manualEndId);
+                manualEndTerminal = allTerminals.find(t => t.id == endId);
             }
 
             // --- TRIP LOGIC START ---
@@ -878,117 +817,61 @@
                 if (currentTrip.stopTimer) { clearTimeout(currentTrip.stopTimer); currentTrip.stopTimer = null; }
 
                 if (!currentTrip.isTrackingTrip) {
+                    let closestStartTerminal = null;
+                    let minStartDistance = Infinity;
+                    allTerminals.forEach(terminal => {
+                        const dist = getHaversineDistance(rawLat, rawLon, terminal.latitude, terminal.longitude);
+                        if (dist < minStartDistance) { minStartDistance = dist; closestStartTerminal = terminal; }
+                    });
 
-                    // ... Route Determination Logic ...
                     let startTerminalToUse = null;
                     let endTerminalToUse = null;
 
                     if (manualStartTerminal && manualEndTerminal) {
                         startTerminalToUse = manualStartTerminal;
                         endTerminalToUse = manualEndTerminal;
-                        console.log(`TRIP START (Manual): ${startTerminalToUse.name}.`);
                         statusDiv.textContent = `Trip Started (Manual): ${startTerminalToUse.name} -> ${endTerminalToUse.name}!`;
-                        
+                    } else if (closestStartTerminal && minStartDistance < PROXIMITY_THRESHOLD_M && closestStartTerminal.route_id) {
+                        startTerminalToUse = closestStartTerminal;
+                        let destinations = allTerminals.filter(t => t.route_id === startTerminalToUse.route_id && t.id !== startTerminalToUse.id);
+                        endTerminalToUse = destinations[0]; 
+                        statusDiv.textContent = endTerminalToUse 
+                            ? `Trip Started (Auto): ${startTerminalToUse.name} -> ${endTerminalToUse.name}!`
+                            : `Trip Started (Auto) from ${startTerminalToUse.name} (Route not fully defined).`;
                     } else {
-                        // FALLBACK: Proximity Detection
-                        let closestStartTerminal = null;
-                        let minStartDistance = Infinity;
-
-                        allTerminals.forEach(terminal => {
-                            const dist = getHaversineDistance(rawLat, rawLon, terminal.latitude, terminal.longitude);
-                            if (dist < minStartDistance) {
-                                minStartDistance = dist;
-                                closestStartTerminal = terminal;
-                            }
-                        });
-
-                        if (closestStartTerminal && minStartDistance < PROXIMITY_THRESHOLD_M && closestStartTerminal.route_id) {
-                            startTerminalToUse = closestStartTerminal;
-                            
-                            let destinations = allTerminals.filter(t => 
-                                t.route_id === startTerminalToUse.route_id && t.id !== startTerminalToUse.id
-                            );
-                            
-                            endTerminalToUse = destinations[0]; 
-                            
-                            statusDiv.textContent = endTerminalToUse 
-                                ? `Trip Started (Auto): ${startTerminalToUse.name} -> ${endTerminalToUse.name}!`
-                                : `Trip Started (Auto) from ${startTerminalToUse.name} (Route not fully defined).`;
-                                
-                        } else {
-                            currentTrip.identifiedStartTerminal = null; 
-                            statusDiv.textContent = `Trip Started! Sharing location. Speed: ${(rawSpeed * 3.6).toFixed(1)} km/h.`;
-                        }
+                        currentTrip.identifiedStartTerminal = null; 
+                        statusDiv.textContent = `Trip Started! Sharing location. Speed: ${(rawSpeed * 3.6).toFixed(1)} km/h.`;
                     }
 
-                    // --- ROUTE DRAWING & PERSISTENCE ---
                     if (startTerminalToUse && endTerminalToUse) {
                         currentTrip.isTrackingTrip = true; 
                         currentTrip.identifiedStartTerminal = startTerminalToUse;
                         currentTrip.identifiedEndTerminal = endTerminalToUse; 
-                        
                         fetchAndDisplayRoute(startTerminalToUse, endTerminalToUse);
 
-                        // Save active route to Supabase for viewers
                         const { error: routeError } = await supabaseClient
                             .from('active_routes')
                             .upsert({
-                                tracking_id: currentTrackingId,
-                                start_name: startTerminalToUse.name,
-                                end_name: endTerminalToUse.name,
-                                start_lat: startTerminalToUse.latitude,
-                                start_lon: startTerminalToUse.longitude,
-                                end_lat: endTerminalToUse.latitude,
-                                end_lon: endTerminalToUse.longitude,
-                                is_active: true
+                                tracking_id: currentTrackingId, start_name: startTerminalToUse.name, end_name: endTerminalToUse.name, start_lat: startTerminalToUse.latitude, start_lon: startTerminalToUse.longitude, end_lat: endTerminalToUse.latitude, end_lon: endTerminalToUse.longitude, is_active: true
                             });
-
                         if (routeError) { console.error('Error saving active route:', routeError); }
                     } else {
                         currentTrip.isTrackingTrip = true;
                     }
                 }
 
-            } else { // STOPPED OR SLOW
-                
+            } else { 
                 if (currentTrip.isTrackingTrip && !currentTrip.stopTimer) {
                     currentTrip.stopTimer = setTimeout(async () => {
-                        const endPoint = currentTrip.lastStop;
-                        let closestEndTerminal = null;
-                        let minEndDistance = Infinity;
-
-                        allTerminals.forEach(terminal => {
-                            const dist = getHaversineDistance(endPoint.lat, endPoint.lon, terminal.latitude, terminal.longitude);
-                            if (dist < minEndDistance) {
-                                minEndDistance = dist;
-                                closestEndTerminal = terminal;
-                            }
-                        });
-
-                        currentTrip.identifiedEndTerminal = closestEndTerminal;
                         clearDisplayedRoute();
-                        
-                        let endStatusText = 'Trip Completed.';
-                        if (currentTrip.identifiedEndTerminal && minEndDistance < PROXIMITY_THRESHOLD_M) {
-                            endStatusText = `Trip Completed at ${currentTrip.identifiedEndTerminal.name}.`;
-                        }
-                        
-                        // Reset trip state
                         currentTrip.isTrackingTrip = false;
                         currentTrip.startPoint = null;
                         currentTrip.lastStop = null;
                         currentTrip.stopTimer = null;
                         currentTrip.identifiedStartTerminal = null; 
                         currentTrip.identifiedEndTerminal = null;   
-                        
-                        statusDiv.textContent = endStatusText + ' Ready for next trip.';
-
-                        // Clear active route in Supabase
-                        await supabaseClient
-                            .from('active_routes')
-                            .update({ is_active: false })
-                            .eq('tracking_id', currentTrackingId);
-
+                        statusDiv.textContent = 'Trip Completed. Ready for next trip.';
+                        await supabaseClient.from('active_routes').update({ is_active: false }).eq('tracking_id', currentTrackingId);
                     }, MIN_STOP_TIME_MS); 
                 }
             }
@@ -997,11 +880,7 @@
             const { error: updateError } = await supabaseClient
                 .from('vehicle_location')
                 .update({ 
-                    latitude: snappedLocation.lat, 
-                    longitude: snappedLocation.lon,
-                    vehicle_type: currentVehicleType,
-                    speed: rawSpeed,                  
-                    heading: rawHeading               
+                    latitude: snappedLocation.lat, longitude: snappedLocation.lon, vehicle_type: currentVehicleType, speed: rawSpeed, heading: finalHeading 
                 })
                 .eq('tracking_id', currentTrackingId); 
             
@@ -1010,11 +889,11 @@
                  statusDiv.textContent = 'ERROR: Update failed.'; 
                  statusDiv.style.color = '#dc3545';
             } else if (!isMoving) {
-                 statusDiv.textContent = `Stopped. Waiting to confirm trip end...`;
+                 statusDiv.textContent = `Stopped. Waiting to confirm trip end... Heading: ${finalHeading.toFixed(0)}°`;
                  statusDiv.style.color = getSpeedColor(rawSpeed);
             } else if (!currentTrip.identifiedStartTerminal) { 
                 const speedKPH = rawSpeed * 3.6;
-                statusDiv.textContent = `Sharing location. Speed: ${speedKPH.toFixed(1)} km/h.`;
+                statusDiv.textContent = `Sharing location. Speed: ${speedKPH.toFixed(1)} km/h. Heading: ${finalHeading.toFixed(0)}°`;
                 statusDiv.style.color = getSpeedColor(rawSpeed);
             }
         }
@@ -1029,78 +908,63 @@
             stopTracking(); 
         }
 
-        function startTracking() {
-            if (!navigator.geolocation) {
-                statusDiv.textContent = 'Geolocation is not supported by your browser.';
-                return;
-            }
-            if (!currentTrackingId) { 
-                statusDiv.textContent = 'Please log in first and ensure a vehicle is assigned.';
-                return;
-            }
-            
+        function executeTrackingLogic() {
             const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
-            
-            navigator.geolocation.getCurrentPosition(success, error, options);
-
+            navigator.geolocation.getCurrentPosition(success, error, options); 
             intervalID = setInterval(() => {
                 navigator.geolocation.getCurrentPosition(success, error, options);
             }, PING_RATE_MS); 
 
             isTracking = true;
-
             toggleButton.textContent = "Stop Sharing Location (30s rate)";
             toggleButton.classList.remove('share-btn');
             toggleButton.classList.add('stop-btn');
         }
 
-        async function stopTracking() {
-             if (intervalID !== null) {
-                clearInterval(intervalID);
-                intervalID = null;
-            }
-            if (currentTrip.stopTimer) {
-                clearTimeout(currentTrip.stopTimer);
-                currentTrip.stopTimer = null;
-            }
-            clearDisplayedRoute();
+
+        function startTracking() {
+            if (!navigator.geolocation) { statusDiv.textContent = 'Geolocation is not supported by your browser.'; return; }
+            if (!currentTrackingId) { statusDiv.textContent = 'Please log in first and ensure a vehicle is assigned.'; return; }
             
-            if(currentTrackingId) {
-                await supabaseClient
-                    .from('active_routes')
-                    .update({ is_active: false })
-                    .eq('tracking_id', currentTrackingId);
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            executeTrackingLogic();
+                        } else {
+                            statusDiv.textContent = 'Orientation tracking denied. Heading will only update when moving.';
+                            statusDiv.style.color = '#ffc107';
+                            executeTrackingLogic();
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                executeTrackingLogic();
             }
+        }
 
-            currentTrip.isTrackingTrip = false;
-            currentTrip.startPoint = null;
-            currentTrip.lastStop = null;
-            currentTrip.stopTimer = null;
-            currentTrip.identifiedStartTerminal = null; 
-            currentTrip.identifiedEndTerminal = null;  
+        async function stopTracking() {
+             if (intervalID !== null) { clearInterval(intervalID); intervalID = null; }
+             if (currentTrip.stopTimer) { clearTimeout(currentTrip.stopTimer); currentTrip.stopTimer = null; }
+             clearDisplayedRoute();
+            
+             if(currentTrackingId) { await supabaseClient.from('active_routes').update({ is_active: false }).eq('tracking_id', currentTrackingId); }
 
-            isTracking = false;
-            statusDiv.textContent = `Viewing live updates. Ready to share.`;
-            statusDiv.style.color = '#007bff'; 
-            toggleButton.textContent = "Start Sharing Location";
-            toggleButton.classList.remove('stop-btn');
-            toggleButton.classList.add('share-btn');
+             currentTrip.isTrackingTrip = false; currentTrip.startPoint = null; currentTrip.lastStop = null; currentTrip.stopTimer = null; currentTrip.identifiedStartTerminal = null; currentTrip.identifiedEndTerminal = null;  
+             isTracking = false;
+             statusDiv.textContent = `Viewing live updates. Ready to share.`;
+             statusDiv.style.color = '#007bff'; 
+             toggleButton.textContent = "Start Sharing Location";
+             toggleButton.classList.remove('stop-btn');
+             toggleButton.classList.add('share-btn');
         }
 
 
         // --- EVENT LISTENERS ---
-        document.getElementById('loginButton').onclick = handleLogin; 
+        loginButton.onclick = handleLogin; 
         signOutButton.onclick = handleSignOut; 
-        
-        // NEW SIGNUP LISTENERS
-        showSignupLink.onclick = (e) => {
-            e.preventDefault();
-            toggleForms(true);
-        };
-        showLoginLink.onclick = (e) => {
-            e.preventDefault();
-            toggleForms(false);
-        };
+        showSignupLink.onclick = (e) => { e.preventDefault(); toggleForms(true); };
+        showLoginLink.onclick = (e) => { e.preventDefault(); toggleForms(false); };
         signupButton.onclick = handleSignup; 
 
         document.getElementById('toggleButton').onclick = () => {
@@ -1111,20 +975,7 @@
             }
         };
 
-        // Check for existing session on page load
-        supabaseClient.auth.getSession().then(({ data: { session } }) => {
-            if (session) {
-                initializeSharerSession(session.user);
-            } else {
-                toggleButton.disabled = true;
-                terminalMenuContainer.style.display = 'none'; 
-                sharerRouteControl.style.display = 'none';
-                signOutButton.style.display = 'none'; 
-                statusDiv.textContent = `Please log in or sign up to share location.`;
-            }
-        });
-
-        // Terminal Menu Listeners
+        // Terminal Menu Toggler
         document.getElementById('toggleTerminalMenuBtn').onclick = () => {
             const menu = document.getElementById('terminal-submenu');
             menu.style.display = menu.style.display === 'none' ? 'flex' : 'none';
@@ -1144,41 +995,24 @@
             if (startId) {
                 const startTerminal = allTerminals.find(t => t.id == startId);
                 if (startTerminal && startTerminal.route_id) {
-                    
-                    const destinations = allTerminals.filter(t => 
-                        t.route_id === startTerminal.route_id && t.id !== startTerminal.id
-                    );
-
+                    const destinations = allTerminals.filter(t => t.route_id === startTerminal.route_id && t.id !== startTerminal.id);
                     destinations.forEach(terminal => {
                         const option = document.createElement('option');
                         option.value = terminal.id;
                         option.textContent = terminal.name;
                         endTerminalSelect.appendChild(option);
                     });
-                    
                     endTerminalSelect.disabled = destinations.length === 0;
-                    if (destinations.length > 0) {
-                        statusDiv.textContent = `Route ${startTerminal.route_id} selected. Choose destination.`;
-                    } else {
-                        statusDiv.textContent = `Route ${startTerminal.route_id} has no other terminals defined.`;
-                    }
-
-                } else {
-                    statusDiv.textContent = 'Selected terminal has no defined route.';
-                }
-            } else {
-                statusDiv.textContent = 'Auto-detect is active.';
-            }
+                    if (destinations.length > 0) { statusDiv.textContent = `Route ${startTerminal.route_id} selected. Choose destination.`; } else { statusDiv.textContent = `Route ${startTerminal.route_id} has no other terminals defined.`; }
+                } else { statusDiv.textContent = 'Selected terminal has no defined route.'; }
+            } else { statusDiv.textContent = 'Auto-detect is active.'; }
         };
 
         drawManualRouteButton.onclick = function() {
             const startId = startTerminalSelect.value;
             const endId = endTerminalSelect.value;
 
-            if (!startId || !endId) {
-                alert("Please select both a Start and End terminal.");
-                return;
-            }
+            if (!startId || !endId) { alert("Please select both a Start and End terminal."); return; }
 
             const startTerminal = allTerminals.find(t => t.id == startId);
             const endTerminal = allTerminals.find(t => t.id == endId);
@@ -1193,6 +1027,22 @@
             clearDisplayedRoute();
             statusDiv.textContent = 'Route line cleared.';
         };
+
+
+        // --- INITIAL LOAD CHECK ---
+        supabaseClient.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+                initializeSharerSession(session.user);
+            } else {
+                toggleButton.disabled = true;
+                sharerControlsContainer.style.display = 'none';
+                terminalToolsContainer.style.display = 'none'; 
+                signOutButton.style.display = 'none';
+                authContainer.style.display = 'block';
+                signupContainer.style.display = 'none';
+                statusDiv.textContent = `Please log in or sign up to share location.`;
+            }
+        });
     </script>
 </body>
 </html>
