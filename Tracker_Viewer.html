@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚌 Secure Transport Sharer & Viewer a0.403</title>
+    <title>🚌 Secure Transport Sharer & Viewer a0.404</title>
 
     <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
     <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
@@ -428,7 +428,7 @@
 
         // --- GLOBAL STATE & IDS ---
         let intervalID = null; 
-        let inactivityTimeoutID = null; // **NEW**: Timeout ID for 5-minute inactivity check
+        let inactivityTimeoutID = null; 
         let isTracking = false;
         const activeMarkers = new Map(); 
         const activeTerminalMarkers = new Map(); 
@@ -786,10 +786,10 @@
             const lat = e.lngLat.lat;
             const lon = e.lngLat.lon;
             
-            // **FIX**: Prevent crash if coordinates are invalid (NaN)
+            // FIX: Prevent crash if coordinates are invalid (NaN)
             if (isNaN(lat) || isNaN(lon)) {
                 console.error("Map click resulted in invalid coordinates (NaN).", e.lngLat);
-                alert("Could not get valid coordinates from map click. Please try again.");
+                alert("Could not get valid coordinates from map click (NaN error). Please try again or use the 'Capture My GPS' option if on mobile.");
                 return;
             }
             
@@ -1211,23 +1211,20 @@
             floatingTrackingBtn.style.display = loggedIn ? 'block' : 'none';
             onMapControls.style.display = 'none'; 
 
-            // 🛑 REMOVED RECURSIVE CALL: await fetchAndDisplayAllTerminals(); 
-
             // --- Terminal Tools Visibility Check ---
-            const routeIds = allTerminals.map(t => t.route_id).filter(id => id);
-            const hasRoutes = routeIds.length > 0;
-            
-            if (currentUserRole === 'admin' || !hasRoutes) {
+            // FIX: Show Terminal Tools for Admin and Driver for ease of management.
+            if (currentUserRole === 'admin' || currentUserRole === 'driver') {
                 terminalToolsContainer.style.display = 'block';
                 
-                if (currentUserRole !== 'admin') {
-                    document.getElementById('terminal-submenu').style.display = 'none';
-                    document.getElementById('toggleTerminalMenuBtn').textContent = 'Stop/Station Manager (Routes Needed) ▼';
-                } else {
+                if (currentUserRole === 'admin') {
                     document.getElementById('toggleTerminalMenuBtn').textContent = 'Stop/Station Manager (Admin) ▼';
+                } else {
+                    document.getElementById('terminal-submenu').style.display = 'none'; // Keep submenu closed for drivers by default
+                    document.getElementById('toggleTerminalMenuBtn').textContent = 'Stop/Station Manager (Driver) ▼';
                 }
 
             } else {
+                // Hide for viewer/unknown roles
                 terminalToolsContainer.style.display = 'none';
             }
 
@@ -1670,4 +1667,3 @@
     </script>
 </body>
 </html>
-
