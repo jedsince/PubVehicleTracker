@@ -1063,7 +1063,19 @@
             stopLocationSharing();
         }
 
+        // --- NEW updateLocationInSupabase function ---
         async function updateLocationInSupabase(position) {
+            // Fetch the current user ID
+            const userSession = await supabaseClient.auth.getUser();
+            const userId = userSession.data.user?.id;
+            
+            if (!userId) {
+                console.error("User ID missing. Cannot share location.");
+                statusDiv.textContent = "ERROR: User ID missing. Log out and back in.";
+                statusDiv.style.color = '#dc3545';
+                return;
+            }
+            
             const { latitude: rawLat, longitude: rawLon, speed, heading, accuracy } = position.coords;
             const { lat, lon } = simpleSnap(rawLat, rawLon, accuracy);
             const speedKPH = (speed || 0) * 3.6; 
@@ -1073,6 +1085,7 @@
                 .from('vehicle_location')
                 .upsert({
                     tracking_id: currentTrackingId,
+                    sharer_id: userId, // <-- NEW: Include the required sharer_id
                     latitude: lat,
                     longitude: lon,
                     speed: speedKPH / 3.6, 
@@ -1091,6 +1104,7 @@
                 statusDiv.style.color = getSpeedColor(speedKPH / 3.6);
             }
         }
+        // --- END NEW updateLocationInSupabase function ---
 
 
         // --- MANUAL ROUTE LOGIC ---
