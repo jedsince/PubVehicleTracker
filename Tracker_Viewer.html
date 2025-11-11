@@ -151,6 +151,49 @@
             transform: scale(0.95);
         }
         
+        /* --- ON-MAP DRIVER CONTROLS --- */
+        #on-map-controls {
+            position: fixed;
+            bottom: 90px; /* Position above the floating button */
+            right: 20px;
+            background-color: rgba(255, 255, 255, 0.95);
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            align-items: center;
+            z-index: 99;
+        }
+        .seat-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 5px 0;
+        }
+        .seat-control button {
+            width: 40px;
+            height: 40px;
+            font-size: 20px;
+            font-weight: bold;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+        }
+        #occupiedSeatsDisplay {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #333;
+            min-width: 60px;
+            text-align: center;
+        }
+        #capacityLabel {
+            font-size: 0.9em;
+            color: #666;
+        }
+        
         /* Vehicle/Terminal styles remain the same */
         .direction-arrow {
             width: 0;
@@ -191,6 +234,16 @@
     </div>
     
     <button id="floating-tracking-btn" class="share-btn">▶</button>
+
+    <div id="on-map-controls">
+        <div id="capacityLabel"></div>
+        <div class="seat-control">
+            <button id="minusSeatBtn">-</button>
+            <span id="occupiedSeatsDisplay">0</span>
+            <button id="plusSeatBtn">+</button>
+        </div>
+        <button id="submitSeatUpdateBtn" style="width: 100%; margin-top: 5px; background-color: #28a745;">Apply</button>
+    </div>
 
     <div id="sidebar-menu">
         <div class="menu-content">
@@ -239,9 +292,16 @@
                 
                 <div id="vehicle-registration-container" style="padding: 10px 0; border-bottom: 1px solid #ddd; margin-bottom: 10px;">
                     <h4>Register New Vehicle</h4>
-                    <input type="text" id="newPlateInput" placeholder="Plate Number (e.g., ABC-123)" style="margin-bottom: 5px;">
-                    <input type="text" id="vehicleTypeInput" placeholder="Vehicle Type (e.g., Jeepney)" style="margin-bottom: 5px;">
-                    <input type="number" id="capacityInput" placeholder="Capacity (e.g., 20 seats)" min="1" style="margin-bottom: 5px;">
+                    <input type="text" id="newPlateInput" placeholder="Plate Number (e.g., ABC1234)" style="margin-bottom: 5px;">
+                    <select id="vehicleTypeInput" style="margin-bottom: 5px;">
+                        <option value="">-- Select Vehicle Type --</option>
+                        <option value="Motorcycle">Motorcycle</option>
+                        <option value="E-Trike">E-Trike</option>
+                        <option value="Tricycle">Tricycle</option>
+                        <option value="Jeepney">Jeepney</option>
+                        <option value="Bus">Bus</option>
+                    </select>
+                    <input type="number" id="capacityInput" placeholder="Capacity (Max Seats)" min="1" style="margin-bottom: 5px;">
                     <button id="registerVehicleBtn" style="width: 100%; background-color: #28a745;">Register Vehicle</button>
                 </div>
                 
@@ -252,8 +312,7 @@
                     </select>
                     <div id="driver-status-display" style="font-size: 0.9em; margin-top: 5px;"></div>
                     <div id="driver-seat-input-group" style="display: flex; gap: 5px; margin-top: 10px;">
-                        <input type="number" id="driverEmptySeatsInput" placeholder="Empty Seats" min="0" style="flex-grow: 1;">
-                        <button id="selectVehicleToShareBtn" disabled style="background-color: #007bff; color: white;">Set Vehicle</button>
+                        <button id="selectVehicleToShareBtn" disabled style="background-color: #007bff; color: white; width: 100%;">Set Vehicle</button>
                     </div>
                 </div>
                 
@@ -353,10 +412,10 @@
         let isTracking = false;
         const activeMarkers = new Map(); 
         const activeTerminalMarkers = new Map(); 
-        // *** RENAMED GLOBAL VARIABLE ***
-        let currentPlateNumber = null; // Used to be currentTrackingId
+        let currentPlateNumber = null; 
         let currentVehicleType = null;
-        let currentVehicleCapacity = null; // *** NEW ***
+        let currentVehicleCapacity = null; 
+        let occupiedSeats = 0; // *** NEW: Track occupied seats locally for driver ***
         let allTerminals = []; 
         let currentUserRole = null;
         let currentTrip = { isTrackingTrip: false, startPoint: null, lastStop: null, stopTimer: null, identifiedStartTerminal: null, identifiedEndTerminal: null };
@@ -401,10 +460,16 @@
         const registerVehicleBtn = document.getElementById('registerVehicleBtn');
         const driverVehicleSelect = document.getElementById('driverVehicleSelect');
         const selectVehicleToShareBtn = document.getElementById('selectVehicleToShareBtn');
-        const driverEmptySeatsInput = document.getElementById('driverEmptySeatsInput');
         const driverStatusDisplay = document.getElementById('driver-status-display');
         const driverSeatInputGroup = document.getElementById('driver-seat-input-group');
 
+        // *** NEW ON-MAP SEAT CONTROLS ***
+        const onMapControls = document.getElementById('on-map-controls');
+        const minusSeatBtn = document.getElementById('minusSeatBtn');
+        const plusSeatBtn = document.getElementById('plusSeatBtn');
+        const occupiedSeatsDisplay = document.getElementById('occupiedSeatsDisplay');
+        const capacityLabel = document.getElementById('capacityLabel');
+        const submitSeatUpdateBtn = document.getElementById('submitSeatUpdateBtn');
 
         // VIEWER CONTROLS
         const viewerSelectionContainer = document.getElementById('viewer-selection-container');
@@ -473,7 +538,6 @@
 
         // --- MAPBOX & TERMINAL DISPLAY ---
         function updateMarker(data) {
-            // *** RENAMED TO plate_number ***
             const plateNumber = data.plate_number;
             if (!data.latitude || !data.longitude || !plateNumber) return; 
             const type = data.vehicle_type || 'default';
@@ -499,12 +563,24 @@
             markerElement.style.borderBottomColor = arrowColor;
             markerElement.style.transform = `rotate(${heading}deg)`;
             const speedKPH = speed * 3.6;
+            
+            // Calculate occupied seats from the data (for viewer popup)
+            let capacityFromType = 0;
+            if (currentPlateNumber === plateNumber && currentVehicleCapacity) {
+                 capacityFromType = currentVehicleCapacity;
+            } else {
+                 // Try to estimate capacity based on type if possible (or fetch from 'vehicles' table later)
+                 // For now, assume capacity must be known from context/selection.
+            }
+            const occupied = (capacityFromType && emptySeats !== 'N/A') ? (capacityFromType - emptySeats) : totalPassengers;
+
+
             marker.setLngLat(newLngLat)
                      .getPopup()
                     .setHTML(`
                         <h4>${type.toUpperCase()} Plate No.: ${plateNumber}</h4>
                         <p>Speed: ${speedKPH.toFixed(1)} km/h<br>Heading: ${heading.toFixed(0)}&deg;</p>
-                        <p>Empty Seats: <b>${emptySeats}</b> | Passengers: <b>${totalPassengers}</b></p>
+                        <p>Occupied Seats: <b>${occupied}</b> | Empty Seats: <b>${emptySeats}</b></p>
                     `);
             
             // Auto-follow current tracking ID (sharer or viewer's selected vehicle)
@@ -585,7 +661,6 @@
         }
 
         async function fetchAndDisplayViewerRoute(plateNumber, currentLat, currentLon) { 
-            // Only clear if the current plate number being drawn is the one the viewer is tracking
             if (plateNumber === currentPlateNumber) {
                  clearDisplayedRoute(); 
             }
@@ -593,7 +668,7 @@
             const { data, error } = await supabaseClient
                 .from('active_routes')
                 .select('*')
-                .eq('plate_number', plateNumber) // *** RENAMED COLUMN ***
+                .eq('plate_number', plateNumber) 
                 .eq('is_active', true); 
 
             if (error) { console.error('Error fetching viewer route:', error.message); return; }
@@ -615,7 +690,6 @@
 
         function subscribeToLocationUpdates() { 
             supabaseClient.channel('all_vehicles') 
-                // *** RENAMED COLUMN to plate_number ***
                 .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'vehicle_location' }, (payload) => {
                     updateMarker(payload.new);
                 })
@@ -627,7 +701,6 @@
                 })
                 .subscribe();
                 
-            // *** NEW: Subscribe to vehicle list changes ***
             supabaseClient.channel('vehicles_list')
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, async (payload) => {
                     const userId = (await supabaseClient.auth.getUser()).data.user?.id;
@@ -778,14 +851,17 @@
             selectVehicleToShareBtn.disabled = false;
         }
 
+        // *** UPDATED: Plate cleaning and type check ***
         async function registerNewVehicle() {
             const userId = (await supabaseClient.auth.getUser()).data.user?.id;
-            const plate = newPlateInput.value.toUpperCase().trim();
-            const type = vehicleTypeInput.value.trim();
+            // Clean Plate Number: Remove hyphens/dashes/spaces and convert to uppercase
+            const plate = newPlateInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').trim(); 
+            const type = vehicleTypeInput.value; // Get value from dropdown
             const capacity = parseInt(capacityInput.value);
 
-            if (!plate || !type || isNaN(capacity) || capacity < 1) { 
-                alert("Please enter a Plate, Type, and a valid Capacity."); 
+            // Validation Checks
+            if (!plate || plate.length < 4 || !type || !capacity || capacity < 1) { 
+                alert("Please enter a valid Plate (Alphanumeric, min 4), select a Type, and enter a valid Capacity."); 
                 return; 
             }
 
@@ -815,6 +891,7 @@
             }
         }
 
+        // *** UPDATED: Initializes on-map controls ***
         function setVehicleForSharing() {
             const selectedOption = driverVehicleSelect.options[driverVehicleSelect.selectedIndex];
             if (!selectedOption.value) {
@@ -826,7 +903,12 @@
             currentVehicleType = selectedOption.dataset.type;
             currentVehicleCapacity = parseInt(selectedOption.dataset.capacity);
             
-            driverEmptySeatsInput.placeholder = `Empty Seats (Max: ${currentVehicleCapacity})`;
+            // Initialize on-map controls
+            occupiedSeats = 0; 
+            capacityLabel.textContent = `Capacity: ${currentVehicleCapacity} seats`;
+            occupiedSeatsDisplay.textContent = occupiedSeats;
+            
+            driverStatusDisplay.textContent = `Selected: ${currentPlateNumber}. Set seats and start sharing.`;
             statusDiv.textContent = `Selected vehicle ${currentPlateNumber}. Ready to share.`;
             statusDiv.style.color = '#28a745';
             
@@ -892,7 +974,6 @@
             
             const { data, error } = await supabaseClient
                 .from('active_routes')
-                // *** RENAMED COLUMN to plate_number ***
                 .select('plate_number') 
                 .eq('route_id', routeId)
                 .eq('is_active', true);
@@ -906,7 +987,6 @@
             vehicleToTrackSelect.innerHTML = '<option value="">-- Choose Vehicle Plate No. --</option>';
             data.forEach(route => {
                 const option = document.createElement('option');
-                // *** RENAMED COLUMN to plate_number ***
                 option.value = route.plate_number;
                 option.textContent = `Plate No: ${route.plate_number}`;
                 vehicleToTrackSelect.appendChild(option);
@@ -933,7 +1013,7 @@
             toggleSidebar(); 
         }
 
-        // *** NEW FUNCTION: PASSENGER SEAT REPORTING ***
+        // *** PASSENGER SEAT REPORTING FUNCTION ***
         async function submitSeatReport() {
             if (!currentPlateNumber) {
                 alert("Please select a vehicle to track first."); return;
@@ -947,13 +1027,11 @@
 
             statusDiv.textContent = `Submitting seat report...`;
 
-            // Use the RLS policy that allows authenticated users to only update empty_seats
+            // Uses RLS policy to only update empty_seats
             const { error } = await supabaseClient
                 .from('vehicle_location')
                 .update({
                     empty_seats: reportedSeats
-                    // total_passengers will be calculated by a database trigger if possible,
-                    // otherwise, the driver's next ping will correct total_passengers.
                 })
                 .eq('plate_number', currentPlateNumber);
 
@@ -1028,12 +1106,13 @@
             currentUserRole = null;
             currentPlateNumber = null;
             isTracking = false;
+            occupiedSeats = 0; // Reset seats
+            onMapControls.style.display = 'none'; // Hide on-map controls
             if (intervalID) clearInterval(intervalID);
             updateUI(null);
             clearDisplayedRoute();
         }
 
-        // *** UPDATED: saveUserRoleSetup now ONLY updates the role in user_profiles ***
         async function saveUserRoleSetup() {
             const userId = (await supabaseClient.auth.getUser()).data.user?.id;
             if (!userId) return;
@@ -1104,6 +1183,7 @@
             sharerControlsContainer.style.display = loggedIn ? 'block' : 'none';
             terminalToolsContainer.style.display = 'none'; 
             floatingTrackingBtn.style.display = loggedIn ? 'block' : 'none';
+            onMapControls.style.display = 'none'; // Ensure hidden on role/login change
 
             if (loggedIn) {
                 const isDriver = currentUserRole === 'driver';
@@ -1118,8 +1198,12 @@
                     document.getElementById('vehicle-registration-container').style.display = 'block';
                     viewerSelectionContainer.style.display = 'none';
                     passengerSeatReportForm.style.display = 'none';
-                    driverSeatInputGroup.style.display = 'flex';
+                    driverSeatInputGroup.style.display = 'flex'; // This div now only holds the 'Set Vehicle' button
                     
+                    if (isTracking) {
+                         onMapControls.style.display = 'flex';
+                    }
+
                     if (currentPlateNumber) {
                         sharerRouteControl.style.display = 'flex';
                         statusDiv.textContent = `Ready to Share: ${currentPlateNumber}. Set seats.`;
@@ -1193,7 +1277,7 @@
             }
             
             if (currentVehicleCapacity === null) {
-                alert("Please select a vehicle first to set its capacity."); return;
+                alert("Please select a vehicle first."); return;
             }
 
             statusDiv.textContent = `Attempting to start location sharing...`;
@@ -1206,6 +1290,7 @@
                 floatingTrackingBtn.classList.add('stop-btn');
                 floatingTrackingBtn.textContent = '■';
                 floatingTrackingBtn.disabled = false;
+                onMapControls.style.display = 'flex'; // Show on-map controls
                 
                 updateLocationInSupabase(position); 
 
@@ -1224,6 +1309,7 @@
             floatingTrackingBtn.classList.remove('stop-btn');
             floatingTrackingBtn.classList.add('share-btn');
             floatingTrackingBtn.textContent = '▶';
+            onMapControls.style.display = 'none'; // Hide on-map controls
             statusDiv.textContent = `Location sharing stopped for ${currentPlateNumber}.`;
             statusDiv.style.color = '#dc3545';
             clearDisplayedRoute();
@@ -1237,7 +1323,6 @@
             const { error } = await supabaseClient
                 .from('active_routes')
                 .update({ is_active: false })
-                // *** RENAMED COLUMN to plate_number ***
                 .eq('plate_number', currentPlateNumber); 
             
             if (error) console.error("Error marking route inactive:", error);
@@ -1250,7 +1335,7 @@
             stopLocationSharing();
         }
 
-        // --- NEW updateLocationInSupabase function (RENAMED COLUMNS & SEATS) ---
+        // *** UPDATED: Uses occupiedSeats global variable ***
         async function updateLocationInSupabase(position) {
             const userSession = await supabaseClient.auth.getUser();
             const userId = userSession.data.user?.id;
@@ -1261,11 +1346,10 @@
                 statusDiv.style.color = '#dc3545';
                 return;
             }
-
-            const rawEmptySeats = parseInt(driverEmptySeatsInput.value);
-            const emptySeats = (isNaN(rawEmptySeats) || rawEmptySeats > currentVehicleCapacity || rawEmptySeats < 0) 
-                             ? 0 : rawEmptySeats;
-            const totalPassengers = currentVehicleCapacity - emptySeats;
+            
+            // Calculate empty/total passengers from local occupiedSeats
+            const emptySeats = currentVehicleCapacity - occupiedSeats;
+            const totalPassengers = occupiedSeats; 
             
             const { latitude: rawLat, longitude: rawLon, speed, heading, accuracy } = position.coords;
             const { lat, lon } = simpleSnap(rawLat, rawLon, accuracy);
@@ -1275,29 +1359,54 @@
             const { error } = await supabaseClient
                 .from('vehicle_location')
                 .upsert({
-                    plate_number: currentPlateNumber, // *** RENAMED ***
-                    sharer_user_id: userId,          // *** RENAMED ***
+                    plate_number: currentPlateNumber, 
+                    sharer_user_id: userId,          
                     latitude: lat,
                     longitude: lon,
                     speed: speedKPH / 3.6, 
                     heading: finalHeading,
                     accuracy: accuracy,
                     vehicle_type: currentVehicleType, 
-                    empty_seats: emptySeats,         // *** NEW ***
-                    total_passengers: totalPassengers, // *** NEW ***
+                    empty_seats: emptySeats,         
+                    total_passengers: totalPassengers, 
                     last_updated: new Date().toISOString()
-                }, { on_conflict: 'plate_number' }); // *** RENAMED ***
+                }, { on_conflict: 'plate_number' }); 
 
             if (error) {
                 console.error("Supabase update/insert error:", error);
                 statusDiv.textContent = `ERROR: Data not shared. ${error.message.substring(0, 50)}...`;
                 statusDiv.style.color = '#dc3545';
             } else {
-                statusDiv.textContent = `Sharing ON. Plate: ${currentPlateNumber} | Speed: ${speedKPH.toFixed(1)} km/h | Empty Seats: ${emptySeats}`;
+                statusDiv.textContent = `Sharing ON. Plate: ${currentPlateNumber} | Speed: ${speedKPH.toFixed(1)} km/h | Occupied: ${occupiedSeats}`;
                 statusDiv.style.color = getSpeedColor(speedKPH / 3.6);
             }
         }
-        // --- END NEW updateLocationInSupabase function ---
+
+        // --- NEW DRIVER SEAT CONTROL FUNCTIONS ---
+        function updateOccupiedSeats(delta) {
+            if (!isTracking && !currentPlateNumber) return;
+
+            let newOccupied = occupiedSeats + delta;
+
+            // Apply limits: 0 <= occupiedSeats <= currentVehicleCapacity
+            newOccupied = Math.max(0, Math.min(newOccupied, currentVehicleCapacity));
+            
+            if (newOccupied !== occupiedSeats) {
+                occupiedSeats = newOccupied;
+                occupiedSeatsDisplay.textContent = occupiedSeats;
+            }
+        }
+
+        // --- ON-MAP SEAT UPDATE FUNCTION (for the 'Apply' button) ---
+        function submitDriverSeatUpdate() {
+            if (!isTracking || !currentPlateNumber) {
+                alert("Location sharing must be active to update seats.");
+                return;
+            }
+            // Trigger an immediate location update with the new occupiedSeats value
+            statusDiv.textContent = `Updating seat count...`;
+            navigator.geolocation.getCurrentPosition(updateLocationInSupabase, handleGeolocationError, { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 });
+        }
 
 
         // --- MANUAL ROUTE LOGIC ---
@@ -1351,7 +1460,7 @@
                  const { error } = await supabaseClient
                     .from('active_routes')
                     .upsert({
-                        plate_number: currentPlateNumber, // *** RENAMED ***
+                        plate_number: currentPlateNumber, 
                         route_id: startTerminal.route_id,
                         is_active: true,
                         start_lat: startTerminal.latitude,
@@ -1360,7 +1469,7 @@
                         end_lon: endTerminal.longitude,
                         start_name: startTerminal.name,
                         end_name: endTerminal.name
-                    }, { on_conflict: 'plate_number' }); // *** RENAMED ***
+                    }, { on_conflict: 'plate_number' }); 
                  
                  if (error) console.error("Error saving active route:", error);
 
@@ -1387,6 +1496,12 @@
         registerVehicleBtn.addEventListener('click', registerNewVehicle);
         selectVehicleToShareBtn.addEventListener('click', setVehicleForSharing);
         
+        // *** NEW DRIVER SEAT CONTROL LISTENERS ***
+        minusSeatBtn.addEventListener('click', () => updateOccupiedSeats(-1));
+        plusSeatBtn.addEventListener('click', () => updateOccupiedSeats(1));
+        submitSeatUpdateBtn.addEventListener('click', submitDriverSeatUpdate);
+
+
         // TERMINAL MANAGEMENT LISTENERS
         document.getElementById('dropPinButton').addEventListener('click', togglePinningMode);
         document.getElementById('savePinButton').addEventListener('click', savePinnedTerminal);
@@ -1426,7 +1541,7 @@
         });
         setVehicleButton.addEventListener('click', setVehicleAsBeacon);
         
-        // *** NEW PASSENGER SEAT REPORT LISTENER ***
+        // PASSENGER SEAT REPORT LISTENER
         submitSeatReportBtn.addEventListener('click', submitSeatReport);
 
         // Initial check on page load
@@ -1440,4 +1555,3 @@
     </script>
 </body>
 </html>
-
