@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚌 Secure Transport Sharer & Viewer a0.4</title>
+    <title>🚌 Secure Transport Sharer & Viewer a0.2</title>
 
     <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
     <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
@@ -235,15 +235,6 @@
             font-weight: bold;
             font-size: 10px;
         }
-        /* --- Passenger Marker Styles (NEW) --- */
-        .passenger-marker {
-            background-color: #ff5722; 
-            width: 15px;
-            height: 15px;
-            border-radius: 50%;
-            border: 2px solid #fff;
-            box-shadow: 0 0 4px rgba(0,0,0,0.5);
-        }
     </style>
 </head>
 <body>
@@ -361,7 +352,14 @@
                             <button id="submitSeatReportBtn" style="background-color: #007bff; color: white;">Submit</button>
                         </div>
                     </div>
-                </div>
+
+                    <div id="passenger-pinning-form" style="margin-top: 15px; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
+                        <h5>Report Current Location</h5>
+                        <button id="dropPinPassengerButton" class="share-btn">📌 Click Map to Pin Location</button>
+                        <div id="passenger-pin-location-display" style="font-style: italic; color: #555; text-align: center;"></div>
+                        <button id="savePassengerPinButton" class="share-btn" disabled>💾 Save Pinned Location</button>
+                    </div>
+                    </div>
 
                 <div id="sharer-route-control" class="controls" style="flex-direction: column; align-items: stretch; gap: 10px; display: none;">
                     <h4>Manual Route Setting</h4>
@@ -435,15 +433,12 @@
         const PROXIMITY_THRESHOLD_M = 100; 
         const BEACON_TERMINAL_PROXIMITY_M = 500; 
 
-        // --- NEW CONSTANT FOR PASSENGER TRACKING ---
-        const PASSENGER_LOCATION_TABLE = 'passenger_location'; 
-
         // --- GLOBAL STATE & IDS ---
         let intervalID = null; 
         let isTracking = false;
         const activeMarkers = new Map(); 
         const activeTerminalMarkers = new Map(); 
-        const activePassengerMarkers = new Map(); // New map for passengers
+        const activePassengerMarkers = new Map(); // NEW: For displaying other passenger locations
         let currentPlateNumber = null; 
         let currentVehicleType = null;
         let currentVehicleCapacity = null; 
@@ -454,6 +449,11 @@
         let isPinningMode = false;
         let tempTerminalMarker = null;
         let tempPinLocation = null;
+        // NEW PASSENGER PINNING STATE
+        let isPassengerPinningMode = false; 
+        let tempPassengerPinLocation = null;
+        let tempPassengerMarker = null;
+
         const TRIP_ROUTE_SOURCE_ID = 'trip-route-source';
         const TRIP_ROUTE_LAYER_ID = 'trip-route-layer';
         let deviceOrientationHeading = null; 
@@ -516,6 +516,10 @@
         const submitSeatReportBtn = document.getElementById('submitSeatReportBtn');
         const passengerSeatReportForm = document.getElementById('passenger-seat-report-form');
 
+        // NEW PASSENGER PINNING CONTROLS
+        const dropPinPassengerButton = document.getElementById('dropPinPassengerButton');
+        const savePassengerPinButton = document.getElementById('savePassengerPinButton');
+        const passengerPinLocationDisplay = document.getElementById('passenger-pin-location-display');
         
         // SHARER CONTROLS
         const startTerminalSelect = document.getElementById('startTerminalSelect');
@@ -573,7 +577,7 @@
             }; 
         }
 
-        // --- MAPBOX & TERMINAL DISPLAY ---
+        // --- MAPBOX & MARKER DISPLAY ---
         function updateMarker(data) {
             const plateNumber = data.plate_number;
             if (!data.latitude || !data.longitude || !plateNumber) return; 
@@ -629,41 +633,40 @@
                 fetchAndDisplayViewerRoute(plateNumber, data.latitude, data.longitude); 
             }
         }
-        
-        // --- NEW: PASSENGER MARKER DISPLAY ---
+
+        // NEW: Function to update passenger location markers
         function updatePassengerMarker(data) {
             const userId = data.user_id;
             if (!data.latitude || !data.longitude || !userId) return; 
             const newLngLat = [data.longitude, data.latitude];
-
+            
             let marker = activePassengerMarkers.get(userId);
             
             if (!marker) {
                 const el = document.createElement('div');
-                el.className = 'passenger-marker';
-                
-                // Drivers/Admins get a popup with user info blip
-                if (currentUserRole === 'driver' || currentUserRole === 'admin') {
-                    marker = new mapboxgl.Marker({ element: el, anchor: 'center' }) 
-                        .setLngLat(newLngLat)
-                        .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(`
-                            <h4>Passenger Waiting</h4>
-                            <p>User ID: ${userId.substring(0, 8)}...<br>
-                        `)) 
-                        .addTo(map);
-                } else {
-                    // Viewers only see a simple blip without personal info
-                    marker = new mapboxgl.Marker({ element: el, anchor: 'center' }) 
-                        .setLngLat(newLngLat)
-                        .addTo(map);
-                }
+                el.className = 'terminal-marker'; 
+                el.textContent = '🧍'; // Person/Passenger icon
+                el.style.backgroundColor = '#6f42c1'; // Purple color for distinctiveness
+                el.style.fontSize = '12px';
+                el.style.width = '25px';
+                el.style.height = '25px';
+                marker = new mapboxgl.Marker({ element: el, anchor: 'center' }) 
+                    .setLngLat(newLngLat)
+                    .setPopup(new mapboxgl.Popup({ offset: 25 })) 
+                    .addTo(map);
                 activePassengerMarkers.set(userId, marker);
             }
             
-            marker.setLngLat(newLngLat);
+            marker.setLngLat(newLngLat)
+                     .getPopup()
+                    .setHTML(`
+                        <h4>Passenger Location</h4>
+                        <p>Last Update: ${new Date(data.last_updated).toLocaleTimeString()}</p>
+                        <p>Accuracy: ${data.accuracy ? data.accuracy.toFixed(1) + 'm' : 'N/A'}</p>
+                    `);
         }
-        // --- END PASSENGER MARKER DISPLAY ---
-
+        // END NEW PASSENGER MARKER FUNCTION
+        
         async function fetchAndDisplayAllTerminals() {
             const { data, error } = await supabaseClient.from('terminals').select('*');
             if (error) { console.error('Error fetching terminals:', error.message); return; }
@@ -754,26 +757,6 @@
                 map.getSource(TRIP_ROUTE_SOURCE_ID).setData({ type: 'FeatureCollection', features: [] });
             }
         }
-        
-        // --- NEW: PASSENGER SUBSCRIPTION FUNCTION ---
-        function subscribeToPassengerLocationUpdates() {
-            supabaseClient.channel('all_passengers') 
-                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: PASSENGER_LOCATION_TABLE }, (payload) => {
-                    updatePassengerMarker(payload.new);
-                })
-                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: PASSENGER_LOCATION_TABLE }, (payload) => {
-                    updatePassengerMarker(payload.new);
-                })
-                .on('postgres_changes', { event: 'DELETE', schema: 'public', table: PASSENGER_LOCATION_TABLE }, (payload) => {
-                    const marker = activePassengerMarkers.get(payload.old.user_id);
-                    if (marker) {
-                        marker.remove();
-                        activePassengerMarkers.delete(payload.old.user_id);
-                    }
-                })
-                .subscribe();
-        }
-        // --- END PASSENGER SUBSCRIPTION FUNCTION ---
 
         function subscribeToLocationUpdates() { 
             supabaseClient.channel('all_vehicles') 
@@ -796,9 +779,18 @@
                     }
                 })
                 .subscribe();
-                
-            // NEW: Passenger Location Subscription
-            subscribeToPassengerLocationUpdates();
+
+            // NEW: Subscribe to passenger location updates
+            supabaseClient.channel('all_passenger_locations') 
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'passenger_location' }, (payload) => {
+                    if (payload.new) updatePassengerMarker(payload.new);
+                    if (payload.eventType === 'DELETE') {
+                         const marker = activePassengerMarkers.get(payload.old.user_id);
+                         if (marker) marker.remove();
+                         activePassengerMarkers.delete(payload.old.user_id);
+                    }
+                })
+                .subscribe();
         }
 
         // --- MAP INITIALIZATION ---
@@ -821,12 +813,12 @@
              const { data: vehicleData } = await supabaseClient.from('vehicle_location').select('*');
              if (vehicleData) vehicleData.forEach(updateMarker);
              
-             // NEW: Initial load of passenger data
-             const { data: passengerData } = await supabaseClient.from(PASSENGER_LOCATION_TABLE).select('*');
-             if (passengerData) passengerData.forEach(updatePassengerMarker);
-             
              // ✅ INITIAL TERMINAL LOAD - ONLY ONCE
              await fetchAndDisplayAllTerminals(); 
+
+             // NEW: Initial Passenger Location Load
+             const { data: passengerData } = await supabaseClient.from('passenger_location').select('*');
+             if (passengerData) passengerData.forEach(updatePassengerMarker);
              
              subscribeToLocationUpdates(); 
         });
@@ -851,23 +843,44 @@
                 mapCanvas.style.cursor = '';
                 clearTempPin();
             }
+             // Ensure passenger pinning mode is off
+            if (isPassengerPinningMode) togglePassengerPinningMode();
         }
 
         function handleMapClick(e) {
-            if (!isPinningMode) return;
-            clearTempPin();
-            const lat = e.lngLat.lat;
-            const lon = e.lngLat.lon;
-            tempPinLocation = { lat: lat, lon: lon };
-            const el = document.createElement('div');
-            el.className = 'terminal-marker';
-            el.textContent = '?'; 
-            el.style.backgroundColor = '#ffc107'; 
-            tempTerminalMarker = new mapboxgl.Marker({ element: el, anchor: 'center' })
-                .setLngLat([lon, lat]) // FIX HERE: [longitude, latitude]
-                .addTo(map);
-            document.getElementById('pin-location-display').textContent = `Pin Dropped at: Lat ${lat.toFixed(4)}, Lon ${lon.toFixed(4)}`;
-            document.getElementById('savePinButton').disabled = false;
+            if (isPinningMode) { // DRIVER: Terminal Pinning
+                clearTempPin();
+                const lat = e.lngLat.lat;
+                const lon = e.lngLat.lon;
+                tempPinLocation = { lat: lat, lon: lon };
+                const el = document.createElement('div');
+                el.className = 'terminal-marker';
+                el.textContent = '?'; 
+                el.style.backgroundColor = '#ffc107'; 
+                tempTerminalMarker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+                    .setLngLat([lon, lat]) // FIX HERE: [longitude, latitude]
+                    .addTo(map);
+                document.getElementById('pin-location-display').textContent = `Pin Dropped at: Lat ${lat.toFixed(4)}, Lon ${lon.toFixed(4)}`;
+                document.getElementById('savePinButton').disabled = false;
+
+            } else if (isPassengerPinningMode) { // PASSENGER: Location Pinning
+                clearTempPassengerPin();
+                const lat = e.lngLat.lat;
+                const lon = e.lngLat.lon;
+                tempPassengerPinLocation = { lat: lat, lon: lon };
+                
+                // Create a distinctive marker for the passenger pin
+                const el = document.createElement('div');
+                el.className = 'terminal-marker'; // Re-use style
+                el.textContent = 'P'; // 'P' for Passenger Pin
+                el.style.backgroundColor = '#6f42c1'; // Purple color for distinctiveness
+                tempPassengerMarker = new mapboxgl.Marker({ element: el, anchor: 'center' })
+                    .setLngLat([lon, lat]) 
+                    .addTo(map);
+
+                passengerPinLocationDisplay.textContent = `Pin Dropped at: Lat ${lat.toFixed(4)}, Lon ${lon.toFixed(4)}`;
+                savePassengerPinButton.disabled = false;
+            }
         }
 
         function clearTempPin() {
@@ -921,6 +934,70 @@
                 // Note: The Supabase subscription will automatically trigger fetchAndDisplayAllTerminals()
             }
         }
+
+        // NEW: Passenger Pinning Logic
+        function togglePassengerPinningMode() {
+            isPassengerPinningMode = !isPassengerPinningMode;
+            const mapCanvas = map.getCanvasContainer();
+            if (isPassengerPinningMode) {
+                dropPinPassengerButton.textContent = '❌ Cancel Pin Drop';
+                dropPinPassengerButton.classList.remove('share-btn');
+                dropPinPassengerButton.classList.add('stop-btn');
+                passengerPinLocationDisplay.textContent = 'Pin Drop mode is ON. Click map to place your location.';
+                mapCanvas.style.cursor = 'crosshair';
+                toggleSidebar(); 
+            } else {
+                dropPinPassengerButton.textContent = '📌 Click Map to Pin Location';
+                dropPinPassengerButton.classList.remove('stop-btn');
+                dropPinPassengerButton.classList.add('share-btn');
+                mapCanvas.style.cursor = '';
+                clearTempPassengerPin();
+            }
+            // Ensure driver's terminal pinning mode is off
+            if (isPinningMode) togglePinningMode();
+        }
+
+        function clearTempPassengerPin() {
+            if (tempPassengerMarker) {
+                tempPassengerMarker.remove();
+                tempPassengerMarker = null;
+            }
+            tempPassengerPinLocation = null;
+            passengerPinLocationDisplay.textContent = '';
+            savePassengerPinButton.disabled = true;
+        }
+
+        async function savePinnedPassengerLocation() {
+            const userSession = await supabaseClient.auth.getUser();
+            const userId = userSession.data.user?.id;
+            
+            if (!userId) { alert("You must be logged in to save location!"); return; }
+            if (!tempPassengerPinLocation) { alert("No pin dropped. Click the map first!"); return; }
+
+            statusDiv.textContent = `Saving passenger location...`;
+            
+            // Note: Manual pin provides low confidence (high numerical accuracy value)
+            const { error } = await supabaseClient
+                .from('passenger_location')
+                .upsert({
+                    user_id: userId, 
+                    latitude: tempPassengerPinLocation.lat,
+                    longitude: tempPassengerPinLocation.lon,
+                    accuracy: 50, // Arbitrary accuracy for manual pin
+                    last_updated: new Date().toISOString()
+                }, { onConflict: 'user_id' }); 
+
+            if (error) {
+                console.error('Passenger location save error:', error);
+                statusDiv.textContent = `ERROR saving location: ${error.message}`;
+                statusDiv.style.color = '#dc3545';
+            } else {
+                statusDiv.textContent = `Successfully saved your pinned location!`;
+                statusDiv.style.color = '#28a745';
+            }
+            togglePassengerPinningMode(); 
+        }
+        // END NEW PASSENGER PINNING LOGIC
         
         // --- VEHICLE MANAGEMENT FUNCTIONS ---
         async function fetchDriverVehicles(userId) {
@@ -1018,7 +1095,7 @@
         
         function identifyNearbyRoutes() {
             viewerSelectionContainer.style.display = 'block';
-            passengerSeatReportForm.style.display = 'none'; 
+            // passengerSeatReportForm.style.display = 'none'; // Keep visible if a vehicle is selected
             routeToTrackSelect.innerHTML = '<option value="">-- Searching for Nearby Stops/Stations... --</option>';
             if (!navigator.geolocation) {
                 routeToTrackSelect.innerHTML = '<option value="">Geolocation not supported.</option>';
@@ -1094,7 +1171,6 @@
                 alert("Please select a vehicle to track first.");
                 return;
             }
-            // If the user is sharing their own location, stop it before tracking a vehicle
             if(isTracking) stopLocationSharing(); 
             
             currentPlateNumber = selectedPlateNumber;
@@ -1201,10 +1277,6 @@
             if (intervalID) clearInterval(intervalID);
             updateUI(null);
             clearDisplayedRoute();
-            
-            // Remove all passenger markers on sign out
-            activePassengerMarkers.forEach(marker => marker.remove());
-            activePassengerMarkers.clear();
         }
 
         async function saveUserRoleSetup() {
@@ -1326,21 +1398,8 @@
                         statusDiv.style.color = '#dc3545';
                         floatingTrackingBtn.disabled = true;
                     }
-                    
-                    // Driver Floating Button State
-                    if (isTracking) {
-                        floatingTrackingBtn.classList.remove('share-btn');
-                        floatingTrackingBtn.classList.add('stop-btn');
-                        floatingTrackingBtn.textContent = '■';
-                    } else if (currentPlateNumber) {
-                        floatingTrackingBtn.classList.remove('stop-btn');
-                        floatingTrackingBtn.classList.add('share-btn');
-                        floatingTrackingBtn.textContent = '▶';
-                        floatingTrackingBtn.disabled = false;
-                    }
 
-
-                } else { // Viewer/Passenger Role
+                } else { 
                     document.getElementById('driver-vehicle-selection').style.display = 'none';
                     document.getElementById('vehicle-registration-collapsible').style.display = 'none'; 
                     sharerRouteControl.style.display = 'none';
@@ -1348,30 +1407,28 @@
                     
                     if (currentPlateNumber) {
                         passengerSeatReportForm.style.display = 'block';
-                        statusDiv.textContent = `Viewing Plate No. ${currentPlateNumber}. Stop viewing to share your location.`;
+                        statusDiv.textContent = `Viewing Plate No. ${currentPlateNumber}.`;
                     } else {
-                         statusDiv.textContent = `Logged in as Viewer/Passenger. Select a vehicle to track or share your location (📍).`;
+                         statusDiv.textContent = 'Logged in as Viewer/Passenger. Select a vehicle to track.';
                          statusDiv.style.color = '#007bff';
                     }
                     
-                    // Viewer Floating Button State
-                    floatingTrackingBtn.disabled = false;
-                    floatingTrackingBtn.classList.remove('share-btn', 'stop-btn');
-                    
-                    if (isTracking) {
-                        floatingTrackingBtn.classList.add('stop-btn');
-                        floatingTrackingBtn.textContent = '■'; // Stop sharing own location
-                    } else if (currentPlateNumber) {
-                        // Viewing a vehicle: disable button to prevent sharing *while* viewing
-                        floatingTrackingBtn.disabled = true;
-                        floatingTrackingBtn.style.backgroundColor = '#6c757d'; 
-                        floatingTrackingBtn.textContent = '🚫';
-                    } else {
-                        // Not viewing, not tracking: ready to share own location
-                        floatingTrackingBtn.classList.add('share-btn');
-                        floatingTrackingBtn.textContent = '📍'; 
-                    }
+                    floatingTrackingBtn.disabled = true;
+                    floatingTrackingBtn.style.backgroundColor = '#6c757d'; 
+                    floatingTrackingBtn.textContent = '🚫';
                 }
+
+                // --- Floating Button State (Visual only) ---
+                if (isTracking) {
+                    floatingTrackingBtn.classList.remove('share-btn');
+                    floatingTrackingBtn.classList.add('stop-btn');
+                    floatingTrackingBtn.textContent = '■';
+                } else if (isDriver && currentPlateNumber) {
+                    floatingTrackingBtn.classList.remove('stop-btn');
+                    floatingTrackingBtn.classList.add('share-btn');
+                    floatingTrackingBtn.textContent = '▶';
+                }
+
             } else {
                 statusDiv.textContent = 'Login Required.';
                 statusDiv.style.color = '#dc3545';
@@ -1381,12 +1438,8 @@
 
         // --- LOCATION SHARING/PINGING LOGIC ---
         function toggleLocationSharing() {
-            if (currentUserRole === 'driver' && !currentPlateNumber) {
+            if (!currentUserRole || currentUserRole === 'viewer' || !currentPlateNumber) {
                 alert("Please set your role as 'Driver' and select a registered vehicle before sharing location.");
-                return;
-            }
-            if (currentUserRole === 'viewer' && currentPlateNumber && !isTracking) {
-                alert("Please stop tracking the vehicle before sharing your own location.");
                 return;
             }
             if (isTracking) {
@@ -1402,7 +1455,7 @@
                 return;
             }
             
-            if (currentUserRole === 'driver' && currentVehicleCapacity === null) {
+            if (currentVehicleCapacity === null) {
                 alert("Please select a vehicle first."); return;
             }
 
@@ -1410,34 +1463,23 @@
             floatingTrackingBtn.disabled = true;
 
             const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
-            
-            // Function to run after position is found
-            const positionCallback = position => {
+            navigator.geolocation.getCurrentPosition(position => {
                 isTracking = true;
                 floatingTrackingBtn.classList.remove('share-btn');
                 floatingTrackingBtn.classList.add('stop-btn');
                 floatingTrackingBtn.textContent = '■';
                 floatingTrackingBtn.disabled = false;
+                onMapControls.style.display = 'flex'; 
                 
-                // Determine which update function to use
-                const updateFunc = currentUserRole === 'driver' 
-                    ? updateLocationInSupabase // Driver's function
-                    : updatePassengerLocationInSupabase; // Viewer's function
-                
-                onMapControls.style.display = currentUserRole === 'driver' ? 'flex' : 'none'; 
-                
-                updateFunc(position); 
+                updateLocationInSupabase(position); 
 
                 intervalID = setInterval(() => {
-                    navigator.geolocation.getCurrentPosition(updateFunc, handleGeolocationError, options);
+                    navigator.geolocation.getCurrentPosition(updateLocationInSupabase, handleGeolocationError, options);
                 }, PING_RATE_MS);
-            };
-
-            navigator.geolocation.getCurrentPosition(positionCallback, handleGeolocationError, options);
+            }, handleGeolocationError, options);
         }
 
-        async function stopLocationSharing() {
-            // Common logic
+        function stopLocationSharing() {
             isTracking = false;
             if (intervalID) {
                 clearInterval(intervalID);
@@ -1445,34 +1487,15 @@
             }
             floatingTrackingBtn.classList.remove('stop-btn');
             floatingTrackingBtn.classList.add('share-btn');
-            floatingTrackingBtn.textContent = currentUserRole === 'viewer' ? '📍' : '▶'; // Reset viewer to pin icon
+            floatingTrackingBtn.textContent = '▶';
             onMapControls.style.display = 'none'; 
+            statusDiv.textContent = `Location sharing stopped for ${currentPlateNumber}.`;
+            statusDiv.style.color = '#dc3545';
             clearDisplayedRoute();
             
-            if (currentUserRole === 'driver') {
-                statusDiv.textContent = `Location sharing stopped for ${currentPlateNumber}.`;
-                statusDiv.style.color = '#dc3545';
-                markRouteAsInactive();
-                currentTrip = { isTrackingTrip: false, startPoint: null, lastStop: null, stopTimer: null, identifiedStartTerminal: null, identifiedEndTerminal: null };
-            } else if (currentUserRole === 'viewer') {
-                // NEW: Passenger/Viewer logic - Delete location
-                const userSession = await supabaseClient.auth.getUser();
-                const userId = userSession.data.user?.id;
-                
-                if(userId) {
-                    const { error } = await supabaseClient
-                        .from(PASSENGER_LOCATION_TABLE)
-                        .delete()
-                        .eq('user_id', userId);
-
-                    if (error) console.error("Error stopping passenger sharing:", error);
-                }
-                statusDiv.textContent = `Passenger location sharing stopped.`;
-                statusDiv.style.color = '#dc3545';
-            }
+            markRouteAsInactive();
             
-            // Re-run UI update to ensure button state is correct, especially for viewer
-            updateUI((await supabaseClient.auth.getUser()).data.user?.id);
+            currentTrip = { isTrackingTrip: false, startPoint: null, lastStop: null, stopTimer: null, identifiedStartTerminal: null, identifiedEndTerminal: null };
         }
 
         async function markRouteAsInactive() {
@@ -1491,7 +1514,7 @@
             stopLocationSharing();
         }
 
-        // *** CRITICAL FIX: UPDATED HEADING LOGIC (DRIVER'S FUNCTION) ***
+        // *** CRITICAL FIX: UPDATED HEADING LOGIC ***
         async function updateLocationInSupabase(position) {
             const userSession = await supabaseClient.auth.getUser();
             const userId = userSession.data.user?.id;
@@ -1545,42 +1568,6 @@
                 statusDiv.style.color = getSpeedColor(speedKPH / 3.6);
             }
         }
-        
-        // --- NEW: PASSENGER LOCATION UPDATE FUNCTION ---
-        async function updatePassengerLocationInSupabase(position) {
-            const userSession = await supabaseClient.auth.getUser();
-            const userId = userSession.data.user?.id;
-            
-            if (!userId) {
-                console.error("User ID missing. Cannot share passenger location.");
-                statusDiv.textContent = "ERROR: User ID missing. Log out and back in.";
-                statusDiv.style.color = '#dc3545';
-                return;
-            }
-            
-            const { latitude: rawLat, longitude: rawLon, accuracy } = position.coords;
-            const { lat, lon } = simpleSnap(rawLat, rawLon, accuracy);
-            
-            const { error } = await supabaseClient
-                .from(PASSENGER_LOCATION_TABLE)
-                .upsert({
-                    user_id: userId,          
-                    latitude: lat,
-                    longitude: lon,
-                    accuracy: accuracy,
-                    last_updated: new Date().toISOString()
-                }, { on_conflict: 'user_id' }); 
-
-            if (error) {
-                console.error("Supabase passenger update/insert error:", error);
-                statusDiv.textContent = `ERROR: Passenger location not shared. ${error.message.substring(0, 50)}...`;
-                statusDiv.style.color = '#dc3545';
-            } else {
-                statusDiv.textContent = `Sharing ON. Viewer location shared.`;
-                statusDiv.style.color = '#ff5722'; 
-            }
-        }
-        // --- END PASSENGER LOCATION UPDATE FUNCTION ---
 
         // --- NEW DRIVER SEAT CONTROL FUNCTIONS ---
         function updateOccupiedSeats(delta) {
@@ -1602,7 +1589,6 @@
                 return;
             }
             statusDiv.textContent = `Updating seat count...`;
-            // Call the driver's update function explicitly
             navigator.geolocation.getCurrentPosition(updateLocationInSupabase, handleGeolocationError, { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 });
         }
 
@@ -1724,38 +1710,3 @@
         showLoginLink.addEventListener('click', (e) => {
             e.preventDefault();
             authContainer.style.display = 'block';
-            signupContainer.style.display = 'none';
-        });
-
-        // Manual Route Controls
-        startTerminalSelect.addEventListener('change', (e) => {
-            populateEndTerminalSelect(e.target.value);
-        });
-        drawManualRouteButton.addEventListener('click', drawManualRoute);
-        clearManualRouteButton.addEventListener('click', () => {
-             clearDisplayedRoute();
-             markRouteAsInactive();
-             statusDiv.textContent = `Manual route cleared.`;
-             statusDiv.style.color = '#dc3545';
-        });
-
-        // Passenger/Viewer Controls
-        routeToTrackSelect.addEventListener('change', (e) => {
-            fetchVehiclesOnRoute(e.target.value);
-        });
-        setVehicleButton.addEventListener('click', setVehicleAsBeacon);
-        
-        // PASSENGER SEAT REPORT LISTENER
-        submitSeatReportBtn.addEventListener('click', submitSeatReport);
-
-        // Initial check on page load
-        supabaseClient.auth.getSession().then(({ data: { session } }) => {
-            if (session) {
-                updateUI(session.user.id);
-            } else {
-                updateUI(null);
-            }
-        });
-    </script>
-</body>
-</html>
