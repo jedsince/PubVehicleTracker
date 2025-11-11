@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚌 Secure Transport Sharer & Viewer a0.1</title>
+    <title>🚌 Secure Transport Sharer & Viewer a0.101</title>
 
     <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
     <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
@@ -641,8 +641,7 @@
                 activeTerminalMarkers.set(terminal.id, marker);
             });
             console.log(`Loaded ${allTerminals.length} terminals and populated dropdowns.`);
-            const userId = (await supabaseClient.auth.getUser()).data.user?.id;
-            updateUI(userId);
+            // 🛑 REMOVED RECURSIVE CALL: updateUI(userId); 
         }
 
         async function fetchAndDisplayRoute(startTerminal, endTerminal, currentLat, currentLon) {
@@ -751,7 +750,10 @@
              });
              const { data: vehicleData } = await supabaseClient.from('vehicle_location').select('*');
              if (vehicleData) vehicleData.forEach(updateMarker);
-             await fetchAndDisplayAllTerminals();
+             
+             // ✅ INITIAL TERMINAL LOAD - ONLY ONCE
+             await fetchAndDisplayAllTerminals(); 
+             
              subscribeToLocationUpdates(); 
         });
 
@@ -842,7 +844,7 @@
                 statusDiv.textContent = `Successfully SAVED new stop/station: ${name}!`;
                 document.getElementById('terminalNameInput').value = '';
                 document.getElementById('routeIdInput').value = ''; 
-                fetchAndDisplayAllTerminals(); 
+                // Note: The Supabase subscription will automatically trigger fetchAndDisplayAllTerminals()
             }
         }
         
@@ -1197,8 +1199,9 @@
             floatingTrackingBtn.style.display = loggedIn ? 'block' : 'none';
             onMapControls.style.display = 'none'; 
 
+            // 🛑 REMOVED RECURSIVE CALL: await fetchAndDisplayAllTerminals(); 
+
             // --- Terminal Tools Visibility Check ---
-            await fetchAndDisplayAllTerminals(); 
             const routeIds = allTerminals.map(t => t.route_id).filter(id => id);
             const hasRoutes = routeIds.length > 0;
             
@@ -1591,4 +1594,3 @@
     </script>
 </body>
 </html>
-
