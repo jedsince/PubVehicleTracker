@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚌 Secure Transport Sharer & Viewer a0.404</title>
+    <title>🚌 Secure Transport Sharer & Viewer a0.405</title>
 
     <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
     <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
@@ -428,7 +428,6 @@
 
         // --- GLOBAL STATE & IDS ---
         let intervalID = null; 
-        let inactivityTimeoutID = null; 
         let isTracking = false;
         const activeMarkers = new Map(); 
         const activeTerminalMarkers = new Map(); 
@@ -783,12 +782,12 @@
         function handleMapClick(e) {
             if (!isPinningMode) return;
             clearTempPin();
+            // FIX: Mapbox's LngLat object uses 'lng', not 'lon'.
             const lat = e.lngLat.lat;
-            const lon = e.lngLat.lon;
+            const lon = e.lngLat.lng; // CORRECTED from e.lngLat.lon
             
-            // FIX: Prevent crash if coordinates are invalid (NaN)
+            // Check for NaN to prevent the original error alert
             if (isNaN(lat) || isNaN(lon)) {
-                console.error("Map click resulted in invalid coordinates (NaN).", e.lngLat);
                 alert("Could not get valid coordinates from map click (NaN error). Please try again or use the 'Capture My GPS' option if on mobile.");
                 return;
             }
@@ -799,8 +798,9 @@
             el.textContent = '?'; 
             el.style.backgroundColor = '#ffc107'; 
             tempTerminalMarker = new mapboxgl.Marker({ element: el, anchor: 'center' })
-                .setLngLat([lon, lat]) 
+                .setLngLat([lon, lat]) // Mapbox expects [longitude, latitude]
                 .addTo(map);
+                
             document.getElementById('pin-location-display').textContent = `Pin Dropped at: Lat ${lat.toFixed(4)}, Lon ${lon.toFixed(4)}`;
             document.getElementById('savePinButton').disabled = false;
         }
@@ -1026,7 +1026,7 @@
         function setVehicleAsBeacon() {
             const selectedPlateNumber = vehicleToTrackSelect.value;
             if (!selectedPlateNumber) {
-                alert("Please select a vehicle to track first.");
+                alert("Please select a vehicle's plate number first.");
                 return;
             }
             if(isTracking) stopLocationSharing(); 
@@ -1133,9 +1133,6 @@
             occupiedSeats = 0; 
             onMapControls.style.display = 'none'; 
             if (intervalID) clearInterval(intervalID);
-            // **NEW**: Clear inactivity timer on sign out
-            if (inactivityTimeoutID) clearTimeout(inactivityTimeoutID);
-            inactivityTimeoutID = null;
             updateUI(null);
             clearDisplayedRoute();
         }
@@ -1211,20 +1208,23 @@
             floatingTrackingBtn.style.display = loggedIn ? 'block' : 'none';
             onMapControls.style.display = 'none'; 
 
+            // 🛑 REMOVED RECURSIVE CALL: await fetchAndDisplayAllTerminals(); 
+
             // --- Terminal Tools Visibility Check ---
-            // FIX: Show Terminal Tools for Admin and Driver for ease of management.
-            if (currentUserRole === 'admin' || currentUserRole === 'driver') {
+            const routeIds = allTerminals.map(t => t.route_id).filter(id => id);
+            const hasRoutes = routeIds.length > 0;
+            
+            if (currentUserRole === 'admin' || !hasRoutes) {
                 terminalToolsContainer.style.display = 'block';
                 
-                if (currentUserRole === 'admin') {
-                    document.getElementById('toggleTerminalMenuBtn').textContent = 'Stop/Station Manager (Admin) ▼';
+                if (currentUserRole !== 'admin') {
+                    document.getElementById('terminal-submenu').style.display = 'none';
+                    document.getElementById('toggleTerminalMenuBtn').textContent = 'Stop/Station Manager (Routes Needed) ▼';
                 } else {
-                    document.getElementById('terminal-submenu').style.display = 'none'; // Keep submenu closed for drivers by default
-                    document.getElementById('toggleTerminalMenuBtn').textContent = 'Stop/Station Manager (Driver) ▼';
+                    document.getElementById('toggleTerminalMenuBtn').textContent = 'Stop/Station Manager (Admin) ▼';
                 }
 
             } else {
-                // Hide for viewer/unknown roles
                 terminalToolsContainer.style.display = 'none';
             }
 
@@ -1291,60 +1291,8 @@
                 statusDiv.textContent = 'Login Required.';
                 statusDiv.style.color = '#dc3545';
                 if (intervalID) { clearInterval(intervalID); intervalID = null; }
-                // **NEW**: Clear inactivity timer on log out
-                if (inactivityTimeoutID) { clearTimeout(inactivityTimeoutID); inactivityTimeoutID = null; }
             }
         }
-
-        // --- NEW INACTIVITY TIMEOUT LOGIC ---
-        function resetInactivityTimer() {
-            if (inactivityTimeoutID) {
-                clearTimeout(inactivityTimeoutID);
-            }
-            // 5 minutes = 300,000 milliseconds
-            inactivityTimeoutID = setTimeout(handleInactivityTimeout, 300000); 
-            console.log("Inactivity timer reset.");
-        }
-
-        function handleInactivityTimeout() {
-            if (!isTracking) {
-                inactivityTimeoutID = null;
-                return;
-            } 
-
-            // Stop the periodic pings immediately to avoid race conditions
-            if (intervalID) {
-                clearInterval(intervalID);
-                intervalID = null;
-            }
-
-            // Prompt the user to continue
-            const isStillWaiting = confirm("Are you still sharing your location? Click OK to continue sharing for another 5 minutes, or Cancel to stop sharing.");
-
-            if (isStillWaiting) {
-                // User confirmed, attempt to update location once
-                statusDiv.textContent = 'Continuing sharing...';
-                const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
-                navigator.geolocation.getCurrentPosition(position => {
-                    updateLocationInSupabase(position);
-                    
-                    // Restart the periodic pings
-                    intervalID = setInterval(() => {
-                        navigator.geolocation.getCurrentPosition(updateLocationInSupabase, handleGeolocationError, options);
-                    }, PING_RATE_MS);
-                    
-                    // The updateLocationInSupabase function will call resetInactivityTimer upon success
-                }, (err) => {
-                    // Handle error on immediate position fetch and stop sharing
-                    console.error("Geolocation Error on inactivity check:", err);
-                    handleGeolocationError(err);
-                }, options);
-            } else {
-                // User canceled, stop sharing completely
-                stopLocationSharing();
-            }
-        }
-        // --- END NEW INACTIVITY TIMEOUT LOGIC ---
 
         // --- LOCATION SHARING/PINGING LOGIC ---
         function toggleLocationSharing() {
@@ -1386,10 +1334,6 @@
                 intervalID = setInterval(() => {
                     navigator.geolocation.getCurrentPosition(updateLocationInSupabase, handleGeolocationError, options);
                 }, PING_RATE_MS);
-                
-                // **NEW**: Start the inactivity timer
-                resetInactivityTimer(); 
-
             }, handleGeolocationError, options);
         }
 
@@ -1398,11 +1342,6 @@
             if (intervalID) {
                 clearInterval(intervalID);
                 intervalID = null;
-            }
-            // **NEW**: Clear the inactivity timer
-            if (inactivityTimeoutID) {
-                clearTimeout(inactivityTimeoutID);
-                inactivityTimeoutID = null;
             }
             floatingTrackingBtn.classList.remove('stop-btn');
             floatingTrackingBtn.classList.add('share-btn');
@@ -1485,9 +1424,6 @@
             } else {
                 statusDiv.textContent = `Sharing ON. Plate: ${currentPlateNumber} | Speed: ${speedKPH.toFixed(1)} km/h | Occupied: ${occupiedSeats}`;
                 statusDiv.style.color = getSpeedColor(speedKPH / 3.6);
-                
-                // **NEW**: Reset the inactivity timer on successful ping/update
-                resetInactivityTimer(); 
             }
         }
 
@@ -1667,3 +1603,4 @@
     </script>
 </body>
 </html>
+
