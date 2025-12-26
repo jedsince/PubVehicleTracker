@@ -9,202 +9,233 @@
     <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
 
     <style>
-        :root { --sidebar: #0f172a; --bg: #f8fafc; --accent: #3b82f6; --danger: #ef4444; }
+        :root { --sidebar: #0f172a; --bg: #f8fafc; --accent: #3b82f6; --danger: #ef4444; --terminal: #1e293b; }
         body { margin: 0; display: flex; height: 100vh; font-family: 'Inter', sans-serif; background: var(--bg); overflow: hidden; }
         
-        /* Auth Screen */
+        /* Auth & UI Components */
         #auth-screen { position: fixed; inset: 0; background: var(--sidebar); z-index: 999; display: flex; align-items: center; justify-content: center; }
-        .auth-card { background: white; padding: 40px; border-radius: 12px; width: 350px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+        .auth-card { background: white; padding: 40px; border-radius: 12px; width: 350px; text-align: center; }
         .auth-card input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; }
         .auth-card button { width: 100%; padding: 12px; background: var(--accent); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
 
-        /* Dashboard Layout */
         .sidebar { width: 280px; background: var(--sidebar); color: white; display: none; flex-direction: column; padding: 20px; }
-        .nav-btn { padding: 12px; cursor: pointer; border-radius: 6px; margin-bottom: 5px; font-size: 0.85rem; }
+        .nav-btn { padding: 12px; cursor: pointer; border-radius: 6px; margin-bottom: 5px; font-size: 0.85rem; transition: 0.2s; }
         .nav-btn.active { background: var(--accent); }
 
         .main { flex: 1; display: none; flex-direction: column; overflow: hidden; }
-        .header { background: white; padding: 15px 30px; border-bottom: 1px solid #e2e8f0; }
+        .header { background: white; padding: 15px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
         .view-container { padding: 20px; overflow-y: auto; flex: 1; }
-        .section { display: none; }
-        .section.active { display: block; }
-
-        #admin-map { height: calc(100vh - 120px); width: 100%; border-radius: 8px; background: #f1f5f9; }
         
-        /* Table Styling */
-        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
+        #admin-map { height: calc(100vh - 120px); width: 100%; border-radius: 8px; background: #f1f5f9; position: relative; }
+        
+        /* Table & Modal */
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; }
         th { text-align: left; padding: 12px; background: #f8fafc; font-size: 0.75rem; color: #64748b; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; }
-        td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 0.85rem; color: #1e293b; }
-        .empty-msg { padding: 40px; text-align: center; color: #94a3b8; font-style: italic; }
+        td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 0.85rem; }
+        
+        #modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:2000; align-items:center; justify-content:center; }
+        .modal-content { background:white; padding:30px; border-radius:12px; width:350px; }
+
+        #add-btn { position:fixed; bottom:30px; right:30px; width:60px; height:60px; border-radius:50%; background:var(--accent); color:white; border:none; font-size:30px; cursor:pointer; box-shadow:0 10px 15px rgba(59,130,246,0.4); z-index:1000; display:none; }
+        
+        /* Map Legend */
+        #map-legend { position: absolute; top: 10px; right: 10px; background: white; padding: 10px; border-radius: 4px; font-size: 0.7rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 10; }
     </style>
 </head>
 <body>
 
     <div id="auth-screen">
         <div class="auth-card">
-            <h1 style="margin-top:0;">Admin Login</h1>
-            <p style="font-size: 0.8rem; color: #64748b;">Authorized Personnel Only</p>
-            <input type="email" id="login-email" placeholder="Admin Email">
+            <h1>Admin Console</h1>
+            <input type="email" id="login-email" placeholder="Email">
             <input type="password" id="login-pass" placeholder="Password">
-            <button onclick="window.handleLogin()">Enter Dashboard</button>
+            <button onclick="window.handleLogin()">Login</button>
             <p id="auth-error" style="color: var(--danger); font-size: 0.75rem; margin-top: 10px; display: none;"></p>
         </div>
     </div>
 
+    <div id="modal-overlay">
+        <div class="modal-content">
+            <h2 id="modal-title" style="margin:0 0 15px 0;">New Record</h2>
+            <form id="entry-form">
+                <div id="form-fields"></div>
+                <button type="submit" style="width:100%; padding:12px; background:var(--accent); color:white; border:none; border-radius:6px; margin-top:10px;">Save to Database</button>
+                <button type="button" onclick="window.closeModal()" style="width:100%; padding:12px; background:#f1f5f9; border:none; border-radius:6px; margin-top:5px;">Cancel</button>
+            </form>
+        </div>
+    </div>
+
     <div class="sidebar" id="sidebar">
-        <h2 style="color: var(--accent); font-size: 0.9rem; letter-spacing: 1px; margin-bottom: 25px;">MASTER CONTROL</h2>
-        <div class="nav-btn active" onclick="window.switchView('user_profiles', this)">User Management</div>
-        <div class="nav-btn" onclick="window.switchView('vehicles', this)">Fleet Registry</div>
-        <div class="nav-btn" onclick="window.switchView('active_routes', this)">Route Dispatch</div>
+        <h2 style="color: var(--accent); font-size: 0.9rem; margin-bottom: 25px;">FLEET COMMAND</h2>
+        <div class="nav-btn active" onclick="window.switchView('user_profiles', this)">User Access</div>
         <div class="nav-btn" onclick="window.switchView('terminals', this)">Terminal Nodes</div>
-        <div class="nav-btn" onclick="window.switchView('live', this)" style="margin-top:20px; border: 1px solid #334155; text-align: center;">🛰️ Live Map</div>
-        <button onclick="window.handleLogout()" style="margin-top: auto; padding: 10px; background: #1e293b; color: white; border: 1px solid #334155; border-radius: 6px; cursor: pointer;">Sign Out</button>
+        <div class="nav-btn" onclick="window.switchView('vehicles', this)">Fleet Registry</div>
+        <div class="nav-btn" onclick="window.switchView('active_routes', this)">Active Routes</div>
+        <div class="nav-btn" onclick="window.switchView('live', this)" style="margin-top:20px; border: 1px solid #334155;">🛰️ LIVE HUB MAP</div>
+        <button onclick="window.handleLogout()" style="margin-top: auto; padding: 10px; background: #334155; color: white; border: none; border-radius: 6px; cursor: pointer;">Sign Out</button>
     </div>
 
     <div class="main" id="main-content">
         <div class="header">
-            <h1 id="view-title" style="margin:0; font-size: 1.1rem; color: #0f172a;">USER PROFILES</h1>
+            <h1 id="view-title" style="margin:0; font-size: 1.1rem;">USER ACCESS</h1>
+            <div id="active-filter-hint" style="font-size: 0.75rem; color: var(--accent); font-weight: bold; display:none;">Filtering by Terminal Hub</div>
         </div>
         <div class="view-container">
-            <div id="view-table" class="section active">
-                <table>
-                    <thead id="table-head"></thead>
-                    <tbody id="table-body"></tbody>
-                </table>
+            <div id="view-table">
+                <table><thead id="table-head"></thead><tbody id="table-body"></tbody></table>
             </div>
-            <div id="view-live" class="section">
-                <div id="admin-map"></div>
+            <div id="view-live" style="display:none;">
+                <div id="admin-map">
+                    <div id="map-legend">
+                        <div><span style="color:#10b981">●</span> Active Vehicles</div>
+                        <div><span style="color:#1e293b">■</span> Terminal Hubs</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
+    <button id="add-btn" onclick="window.openModal()">+</button>
+
     <script type="module">
         import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 
-        // DATABASE CONFIG
         const S_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
         const S_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
         const client = createClient(S_URL, S_KEY);
 
-        // MAPBOX CONFIG - Using your verified token
         mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
         
-        let map = null;
-        const markers = { v: {}, p: {} };
+        let map = null, currentTable = 'user_profiles', selectedTerminalId = null;
+        let markers = { v: {}, t: {} };
+
         const schemas = {
-            user_profiles: ['id', 'full_name', 'role', 'is_active'],
-            vehicles: ['plate_number', 'vehicle_type', 'capacity', 'is_registered'],
-            active_routes: ['route_id', 'route_name', 'plate_number', 'is_active'],
-            terminals: ['name', 'route_id', 'start_lat', 'start_lon']
+            user_profiles: ['id', 'full_name', 'role'],
+            terminals: ['id', 'name', 'start_lat', 'start_lon'],
+            vehicles: ['plate_number', 'vehicle_type', 'capacity'],
+            active_routes: ['route_id', 'route_name', 'plate_number']
         };
 
-        // --- AUTH LOGIC ---
-        window.handleLogin = async function() {
-            const email = document.getElementById('login-email').value;
-            const password = document.getElementById('login-pass').value;
-            const errEl = document.getElementById('auth-error');
-            
-            try {
-                const { data, error } = await client.auth.signInWithPassword({ email, password });
-                if (error) throw error;
-
-                const { data: p, error: pError } = await client.from('user_profiles').select('role').eq('id', data.user.id).single();
-                if (pError || !p || p.role !== 'admin') {
-                    await client.auth.signOut();
-                    throw new Error("Access Denied: Admin Role Required.");
-                }
-            } catch (e) {
-                errEl.innerText = e.message;
-                errEl.style.display = 'block';
-            }
+        window.handleLogin = async () => {
+            const { error } = await client.auth.signInWithPassword({
+                email: document.getElementById('login-email').value,
+                password: document.getElementById('login-pass').value
+            });
+            if (error) alert(error.message);
         };
 
         window.handleLogout = () => { client.auth.signOut(); location.reload(); };
 
-        client.auth.onAuthStateChange((event, session) => {
+        client.auth.onAuthStateChange(async (event, session) => {
             if (session) {
                 document.getElementById('auth-screen').style.display = 'none';
                 document.getElementById('sidebar').style.display = 'flex';
                 document.getElementById('main-content').style.display = 'flex';
-                fetchTableData('user_profiles');
-            } else {
-                document.getElementById('auth-screen').style.display = 'flex';
+                window.switchView('user_profiles', document.querySelector('.nav-btn'));
             }
         });
 
-        // --- NAVIGATION & DATA ---
-        window.switchView = function(tableName, el) {
+        window.switchView = (tableName, el) => {
+            currentTable = tableName;
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             el.classList.add('active');
             
-            const tableSec = document.getElementById('view-table');
-            const liveSec = document.getElementById('view-live');
+            const isMap = tableName === 'live';
+            document.getElementById('view-table').style.display = isMap ? 'none' : 'block';
+            document.getElementById('view-live').style.display = isMap ? 'block' : 'none';
+            document.getElementById('add-btn').style.display = (isMap || tableName === 'user_profiles') ? 'none' : 'block';
+            document.getElementById('view-title').innerText = tableName.toUpperCase().replace('_',' ');
 
-            if (tableName === 'live') {
-                tableSec.classList.remove('active');
-                liveSec.classList.add('active');
-                initMap();
-            } else {
-                liveSec.classList.remove('active');
-                tableSec.classList.add('active');
-                fetchTableData(tableName);
-            }
-            document.getElementById('view-title').innerText = tableName.toUpperCase().replace('_', ' ');
+            if (isMap) initMap(); else fetchTableData(tableName);
         };
 
         async function fetchTableData(tableName) {
-            const head = document.getElementById('table-head');
-            const body = document.getElementById('table-body');
-            const cols = schemas[tableName];
-            
-            head.innerHTML = `<tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>`;
             const { data } = await client.from(tableName).select('*');
-
-            if (!data || data.length === 0) {
-                body.innerHTML = `<tr><td colspan="${cols.length}" class="empty-msg">No entries found in ${tableName}.</td></tr>`;
-                return;
-            }
-
-            body.innerHTML = data.map(row => `
-                <tr>${cols.map(c => `<td>${row[c] ?? '--'}</td>`).join('')}</tr>
-            `).join('');
+            const cols = schemas[tableName];
+            document.getElementById('table-head').innerHTML = `<tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>`;
+            const body = document.getElementById('table-body');
+            body.innerHTML = (!data || data.length === 0) 
+                ? `<tr><td colspan="${cols.length}" style="text-align:center; padding:40px; color:#94a3b8;">Empty Table.</td></tr>`
+                : data.map(row => `<tr>${cols.map(c => `<td>${row[c] ?? '--'}</td>`).join('')}</tr>`).join('');
         }
 
-        // --- MAPBOX LOGIC ---
-        function initMap() {
+        window.openModal = () => {
+            const fields = document.getElementById('form-fields');
+            fields.innerHTML = '';
+            if (currentTable === 'active_routes') {
+                fields.innerHTML = `<p style="font-size:0.7rem; color:var(--accent); margin-bottom:10px;">ROUTE ID must match a Terminal ID.</p>`;
+            }
+            schemas[currentTable].forEach(col => {
+                const input = document.createElement('input');
+                input.name = col;
+                input.placeholder = col.toUpperCase();
+                input.style.cssText = "width:100%; padding:10px; margin-bottom:10px; border:1px solid #ddd; border-radius:4px;";
+                fields.appendChild(input);
+            });
+            document.getElementById('modal-overlay').style.display = 'flex';
+        };
+
+        window.closeModal = () => document.getElementById('modal-overlay').style.display = 'none';
+
+        document.getElementById('entry-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const payload = {};
+            new FormData(e.target).forEach((val, key) => payload[key] = val);
+            const { error } = await client.from(currentTable).insert([payload]);
+            if (error) alert("Database Error: " + error.message);
+            else { window.closeModal(); fetchTableData(currentTable); }
+        };
+
+        // --- ENHANCED MAP LOGIC ---
+        async function initMap() {
             if (map) return;
-            map = new mapboxgl.Map({
-                container: 'admin-map',
-                style: 'mapbox://styles/mapbox/streets-v12',
-                center: [121.05, 14.58], // Metro Manila Area
-                zoom: 11
+            map = new mapboxgl.Map({ container: 'admin-map', style: 'mapbox://styles/mapbox/streets-v12', center: [120.9842, 14.5995], zoom: 11 });
+            
+            // 1. Load Terminals
+            const { data: terminals } = await client.from('terminals').select('*');
+            terminals?.forEach(t => {
+                const el = document.createElement('div');
+                el.style.cssText = "width:16px; height:16px; background:#1e293b; border:2px solid white; cursor:pointer; border-radius:2px;";
+                
+                const marker = new mapboxgl.Marker(el)
+                    .setLngLat([t.start_lon, t.start_lat])
+                    .setPopup(new mapboxgl.Popup().setHTML(`<b>${t.name}</b><br>ID: ${t.id}`))
+                    .addTo(map);
+                
+                // Click terminal to filter vehicles
+                el.addEventListener('click', () => filterByTerminal(t.id));
             });
 
-            map.addControl(new mapboxgl.NavigationControl());
-
-            // Listen for Real-time Location Updates
-            client.channel('admin-tracking')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_location' }, p => updateMarker(p.new, 'v'))
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'passenger_location' }, p => updateMarker(p.new, 'p'))
+            // 2. Real-time Vehicle Listening
+            client.channel('live-admin')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_location' }, p => updateVehicleMarker(p.new))
                 .subscribe();
         }
 
-        function updateMarker(data, type) {
-            if (!data || !data.latitude || !data.longitude) return;
-            const id = type === 'v' ? data.plate_number : data.user_id;
-            const color = type === 'v' ? '#10b981' : '#3b82f6';
+        async function filterByTerminal(tId) {
+            selectedTerminalId = (selectedTerminalId === tId) ? null : tId; // Toggle
+            document.getElementById('active-filter-hint').style.display = selectedTerminalId ? 'block' : 'none';
+            
+            // Get all plate numbers assigned to this route_id/terminal_id
+            const { data: routes } = await client.from('active_routes').select('plate_number').eq('route_id', tId);
+            const validPlates = routes?.map(r => r.plate_number) || [];
 
-            if (markers[type][id]) {
-                markers[type][id].setLngLat([data.longitude, data.latitude]);
+            // Hide/Show markers based on filter
+            Object.keys(markers.v).forEach(plate => {
+                markers.v[plate].getElement().style.opacity = (!selectedTerminalId || validPlates.includes(plate)) ? "1" : "0.1";
+            });
+        }
+
+        function updateVehicleMarker(data) {
+            if (!data.plate_number) return;
+            const pos = [data.longitude, data.latitude];
+            
+            if (markers.v[data.plate_number]) {
+                markers.v[data.plate_number].setLngLat(pos);
             } else {
                 const el = document.createElement('div');
-                el.className = 'marker';
-                el.style.cssText = `width:12px; height:12px; background:${color}; border-radius:50%; border:2px solid white; box-shadow:0 0 5px rgba(0,0,0,0.5);`;
-
-                markers[type][id] = new mapboxgl.Marker(el)
-                    .setLngLat([data.longitude, data.latitude])
-                    .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(`<b>${type === 'v' ? 'Vehicle' : 'User'}</b><br>${id}`))
-                    .addTo(map);
+                el.style.cssText = "width:12px; height:12px; background:#10b981; border-radius:50%; border:2px solid white;";
+                markers.v[data.plate_number] = new mapboxgl.Marker(el).setLngLat(pos).addTo(map);
             }
         }
     </script>
