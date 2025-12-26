@@ -35,7 +35,6 @@
 
         #add-btn { position:fixed; bottom:80px; right:30px; width:60px; height:60px; border-radius:50%; background:var(--accent); color:white; border:none; font-size:30px; cursor:pointer; box-shadow:0 10px 15px rgba(59,130,246,0.4); z-index:1000; display:none; }
 
-        /* Footer Tracker */
         footer { position: absolute; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #e2e8f0; padding: 8px 20px; font-size: 0.7rem; color: #94a3b8; display: flex; justify-content: space-between; align-items: center; z-index: 10; }
     </style>
 </head>
@@ -83,8 +82,8 @@
             <div id="view-live" style="display:none;"><div id="admin-map"></div></div>
         </div>
         <footer>
-            <span>Alpha v0.001 | PubVehicleTracker Build</span>
-            <span>Last Update: 2025-12-26 | Git Ref: Admin-Session-Fix</span>
+            <span>Alpha v0.003 | PubVehicleTracker Build</span>
+            <span>Last Update: 2025-12-26 | Git Ref: Fix-Label-Swap</span>
         </footer>
     </div>
 
@@ -124,8 +123,6 @@
                 document.getElementById('auth-screen').style.display = 'none';
                 document.getElementById('sidebar').style.display = 'flex';
                 document.getElementById('main-content').style.display = 'flex';
-                
-                // FIXED: Only trigger default view on the very first load
                 if (initialLoad) {
                     window.switchView('user_profiles', document.querySelector('.nav-btn'));
                     initialLoad = false;
@@ -192,26 +189,43 @@
             map = new mapboxgl.Map({ container: 'admin-map', style: 'mapbox://styles/mapbox/streets-v12', center: [120.9842, 14.5995], zoom: 11 });
             const { data: terminals } = await client.from('terminals').select('*');
             terminals?.forEach(t => {
+                // START REFERENCE
+                const startCoords = [parseFloat(t.start_lon), parseFloat(t.start_lat)];
+                const endCoords = [parseFloat(t.end_lon), parseFloat(t.end_lat)];
+
+                // Start Marker (Dark Blue) -> Correctly Labeled "Start"
                 const elStart = document.createElement('div');
                 elStart.style.cssText = "width:14px; height:14px; background:#1e293b; border:2px solid white; border-radius:2px;";
-                new mapboxgl.Marker(elStart).setLngLat([t.start_lon, t.start_lat]).setPopup(new mapboxgl.Popup().setHTML(`<b>Terminal Start: ${t.name}</b>`)).addTo(map);
+                new mapboxgl.Marker(elStart)
+                    .setLngLat(startCoords)
+                    .setPopup(new mapboxgl.Popup().setHTML(`<b>START: ${t.name}</b><br>ID: ${t.id}`))
+                    .addTo(map);
+
+                // End Marker (Red) -> Correctly Labeled "End"
                 if (t.end_lon && t.end_lat) {
                     const elEnd = document.createElement('div');
                     elEnd.style.cssText = "width:14px; height:14px; background:#ef4444; border:2px solid white; border-radius:2px;";
-                    new mapboxgl.Marker(elEnd).setLngLat([t.end_lon, t.end_lat]).setPopup(new mapboxgl.Popup().setHTML(`<b>Terminal End: ${t.name}</b>`)).addTo(map);
+                    new mapboxgl.Marker(elEnd)
+                        .setLngLat(endCoords)
+                        .setPopup(new mapboxgl.Popup().setHTML(`<b>END: ${t.name}</b><br>ID: ${t.id}`))
+                        .addTo(map);
                 }
             });
-            client.channel('realtime-map').on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_location' }, p => updateVehicle(p.new)).subscribe();
+
+            client.channel('realtime-map')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_location' }, p => updateVehicle(p.new))
+                .subscribe();
         }
 
         function updateVehicle(data) {
-            if (!data.plate_number) return;
+            if (!data.plate_number || !data.longitude || !data.latitude) return;
+            const coords = [parseFloat(data.longitude), parseFloat(data.latitude)];
             if (markers.v[data.plate_number]) {
-                markers.v[data.plate_number].setLngLat([data.longitude, data.latitude]);
+                markers.v[data.plate_number].setLngLat(coords);
             } else {
                 const el = document.createElement('div');
                 el.style.cssText = "width:12px; height:12px; background:#10b981; border-radius:50%; border:2px solid white;";
-                markers.v[data.plate_number] = new mapboxgl.Marker(el).setLngLat([data.longitude, data.latitude]).addTo(map);
+                markers.v[data.plate_number] = new mapboxgl.Marker(el).setLngLat(coords).addTo(map);
             }
         }
     </script>
