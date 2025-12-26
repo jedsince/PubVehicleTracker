@@ -3,1734 +3,207 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🚌 Secure Transport v a0.410 Sharer & Viewer</title>
-
-    <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
-    <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
+    <title>Secure Admin | PubVehicleTracker</title>
     
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    
+
     <style>
-        /* Reset and Base Layout */
-        body { 
-            margin: 0; 
-            padding-top: 55px; /* Account for fixed header */
-            font-family: Arial, sans-serif; 
-            overflow-x: hidden; /* Prevent horizontal scroll */
-            height: 100vh;
-        }
-        #map { 
-            width: 100%; 
-            height: calc(100vh - 55px); /* Map takes up remaining vertical space */
-            position: absolute; 
-            top: 55px; /* Start below the header */
-            left: 0; 
-        }
-
-        /* --- HEADER & HAMBURGER MENU STYLES --- */
-        .header {
-            background-color: #007bff;
-            color: white;
-            padding: 10px 15px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            position: fixed; 
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 55px; /* Set fixed height */
-            box-sizing: border-box;
-            z-index: 100; 
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        }
-        .header h1 {
-            font-size: 1.1em; /* Slightly smaller for mobile */
-            margin: 0;
-            flex-grow: 1;
-            text-align: center;
-            overflow: hidden;
-            white-space: nowrap;
-            text-overflow: ellipsis; /* Prevent title from spilling */
-        }
-        #menu-toggle-btn {
-            background: none;
-            border: none;
-            color: white;
-            font-size: 30px;
-            line-height: 1;
-            padding: 0 10px;
-            cursor: pointer;
-            z-index: 101;
-        }
-
-        /* --- SIDEBAR MENU STYLES --- */
-        #sidebar-menu {
-            position: fixed;
-            top: 0;
-            left: -300px; 
-            width: 85%; /* Use percentage for responsiveness */
-            max-width: 300px;
-            height: 100%;
-            background-color: #f8f9fa;
-            color: #333;
-            z-index: 200; /* Ensure it's above the map and header */
-            box-shadow: 2px 0 5px rgba(0,0,0,0.5);
-            transition: left 0.3s ease-in-out;
-            padding: 0;
-            overflow-y: auto; /* Allow scrolling inside the menu */
-            box-sizing: border-box;
-        }
-        #sidebar-menu.open {
-            left: 0;
-        }
-        #sidebar-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 150;
-            display: none;
-        }
-        #sidebar-overlay.open {
-            display: block;
-        }
-        .menu-content {
-            padding: 10px 20px 20px 20px; /* Adjust padding */
-        }
-        .menu-content h2, .menu-content h4 {
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid #ddd;
-        }
-        .menu-content h2:first-child, .menu-content h4:first-child {
-            border-top: none;
-            padding-top: 0;
-        }
-
-        /* Input and Button Adjustments for fluid width */
-        .controls input, .controls select, .controls button, .menu-content input, .menu-content select, .menu-content button {
-            width: 100%; /* Make inputs and buttons fill the container */
-            padding: 8px;
-            margin-top: 5px;
-            margin-bottom: 5px;
-            box-sizing: border-box;
-            border-radius: 4px;
-            border: 1px solid #ccc;
-        }
-        .controls button, .menu-content button {
-            cursor: pointer;
-            border: none;
-            font-weight: bold;
-        }
-        .share-btn { background-color: #28a745; color: white; }
-        .stop-btn { background-color: #dc3545; color: white; }
-        .status-text { font-weight: bold; }
-
-        /* Status Bar Positioning */
-        #status-bar {
-            position: fixed;
-            top: 55px; 
-            left: 0;
-            width: 100%;
-            background-color: rgba(255, 255, 255, 0.9);
-            padding: 8px 15px;
-            z-index: 90; 
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            text-align: center;
-            box-sizing: border-box;
-        }
-
-        /* Floating Action Button (FAB) STYLES */
-        #floating-tracking-btn {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            width: 50px; /* Slightly smaller FAB */
-            height: 50px;
-            border-radius: 50%;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
-            font-size: 20px;
-            line-height: 50px; 
-            z-index: 110; 
-            transition: background-color 0.2s, transform 0.1s;
-        }
+        :root { --sidebar: #0f172a; --bg: #f8fafc; --accent: #3b82f6; --danger: #ef4444; }
+        body { margin: 0; display: flex; height: 100vh; font-family: 'Inter', sans-serif; background: var(--bg); overflow: hidden; }
         
-        /* --- ON-MAP DRIVER CONTROLS --- */
-        #on-map-controls {
-            position: fixed;
-            bottom: 80px; /* Position above the floating button */
-            right: 15px;
-            background-color: rgba(255, 255, 255, 0.95);
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
-            padding: 10px;
-            display: none; 
-            flex-direction: column;
-            align-items: center;
-            z-index: 99;
-            max-width: 150px; /* Constrain width */
-            box-sizing: border-box;
-        }
-        .seat-control {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            margin: 5px 0;
-        }
-        .seat-control button {
-            width: 35px; /* Smaller button */
-            height: 35px;
-            font-size: 18px;
-            border: none;
-            border-radius: 4px;
-            background-color: #007bff;
-            color: white;
-            flex-shrink: 0;
-        }
-        #occupiedSeatsDisplay {
-            font-size: 1.1em;
-            font-weight: bold;
-            color: #333;
-            min-width: 40px;
-            text-align: center;
-        }
-        #capacityLabel {
-            font-size: 0.8em;
-            color: #666;
-        }
+        /* Auth Screen */
+        #auth-screen { position: fixed; inset: 0; background: var(--sidebar); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+        .auth-card { background: white; padding: 40px; border-radius: 12px; width: 350px; text-align: center; }
+        .auth-card input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; }
+        .auth-card button { width: 100%; padding: 12px; background: var(--accent); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        
+        /* Loading Overlay */
+        #loading-overlay { display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.9); z-index: 10000; color: white; align-items: center; justify-content: center; flex-direction: column; }
 
-        /* Additional UI containers */
-        #login-error-message {
-            word-wrap: break-word; /* Ensure error messages wrap */
-        }
-        .input-group input {
-            margin-bottom: 5px;
-        }
-
-        /* Terminal/Vehicle markers styles */
-        .direction-arrow {
-            width: 0;
-            height: 0;
-            border-left: 8px solid transparent;
-            border-right: 8px solid transparent;
-            border-bottom: 20px solid;
-            position: relative;
-            border-radius: 2px;
-            box-shadow: 0 0 5px rgba(0,0,0,0.5);
-        }
-        .terminal-marker {
-            background-color: #007bff; 
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            border: 2px solid #fff;
-            box-shadow: 0 0 5px rgba(0,0,0,0.5);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: white;
-            font-weight: bold;
-            font-size: 10px;
-        }
+        /* Dashboard Layout */
+        .sidebar { width: 280px; background: var(--sidebar); color: white; display: none; flex-direction: column; padding: 20px; }
+        .main { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+        .nav-btn { padding: 12px; cursor: pointer; border-radius: 6px; margin-bottom: 5px; font-size: 0.85rem; }
+        .nav-btn.active { background: var(--accent); }
+        
+        table { width: 100%; border-collapse: collapse; background: white; }
+        th { text-align: left; padding: 12px; background: #f8fafc; font-size: 0.7rem; color: #64748b; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; }
+        td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 0.8rem; }
+        #admin-map { height: calc(100vh - 120px); width: 100%; border-radius: 8px; }
     </style>
 </head>
 <body>
-    
-    <div class="header">
-        <button id="menu-toggle-btn" onclick="toggleSidebar()">☰</button>
-        <h1>Live Transport Viewer</h1>
-        <div style="width: 40px;"></div> 
-    </div>
 
-    <div id="status-bar">
-        <div id="status" class="status-text">Checking login status...</div>
-    </div>
-    
-    <button id="floating-tracking-btn" class="share-btn">▶</button>
+    <div id="loading-overlay">Verifying Admin Credentials...</div>
 
-    <div id="on-map-controls">
-        <div id="capacityLabel"></div>
-        <div class="seat-control">
-            <button id="minusSeatBtn">-</button>
-            <span id="occupiedSeatsDisplay">0</span>
-            <button id="plusSeatBtn">+</button>
-        </div>
-        <button id="submitSeatUpdateBtn" style="width: 100%; margin-top: 5px; background-color: #28a745;">Apply</button>
-    </div>
-
-    <div id="sidebar-menu">
-        <div class="menu-content">
-            
-            <div id="auth-container">
-                <h2>Sharer Login</h2>
-                <div id="login-error-message" style="color: #dc3545; font-weight: bold; margin-bottom: 10px;"></div>
-                
-                <div id="login-form-content" class="input-group">
-                    <input type="email" id="email" placeholder="Email">
-                    <input type="password" id="password" placeholder="Password">
-                    <div>
-                        <button id="loginButton">Login</button>
-                    </div>
-                    <p style="margin-top: 10px;">New user? 
-                        <a href="#" id="showSignupLink">Create Account</a>
-                    </p>
-                </div>
-            </div>
-
-            <div id="signup-container" style="display:none;">
-                <h2>Create Account</h2>
-                <div class="input-group">
-                    <input type="text" id="signup-name" placeholder="Full Name" required>
-                    <input type="email" id="signup-email" placeholder="Email" required>
-                    <input type="password" id="signup-password" placeholder="Password (Min 6 chars)" required>
-                    
-                    <button id="signupButton" class="share-btn" style="width: 100%;">Sign Up</button>
-                    <p style="margin-top: 10px;">Already have an account? 
-                        <a href="#" id="showLoginLink">Go to Login</a>
-                    </p>
-                </div>
-            </div>
-            
-            <div id="sharer-controls-container" style="display: none;">
-                
-                <div id="role-setup-container" style="padding: 10px 0; border-bottom: 1px solid #ddd; margin-bottom: 10px;">
-                    <h4>Account Setup</h4>
-                    <select id="userRoleSelect">
-                        <option value="">-- I am a --</option>
-                        <option value="driver">Driver / Vehicle Owner</option>
-                        <option value="viewer">Passenger / Viewer</option>
-                    </select>
-                    <button id="saveRoleButton" style="width: 100%; margin-top: 5px; background-color: #007bff;">Save My Role</button>
-                </div>
-                
-                <div id="driver-vehicle-selection" style="padding: 10px 0; border-bottom: 1px solid #ddd; margin-bottom: 10px;">
-                    <h4>My Vehicles (Driver)</h4>
-                    <select id="driverVehicleSelect">
-                        <option value="">-- Select Vehicle to Share Location --</option>
-                    </select>
-                    <div id="driver-status-display" style="font-size: 0.9em; margin-top: 5px;"></div>
-                    <div id="driver-seat-input-group" style="display: flex; gap: 5px; margin-top: 10px;">
-                        <button id="selectVehicleToShareBtn" disabled style="background-color: #007bff; color: white; width: 100%;">Set Vehicle</button>
-                    </div>
-                </div>
-
-                <div id="vehicle-registration-collapsible">
-                    <h4 id="toggleRegistrationBtn" style="cursor: pointer; background-color: #f0f0f0; color: #333; padding: 10px; border-radius: 4px;">Register New Vehicle ▼</h4>
-                    <div id="vehicle-registration-container" style="display: none; padding: 10px 0; border-bottom: 1px solid #ddd; margin-bottom: 10px;">
-                        <input type="text" id="newPlateInput" placeholder="Plate Number (e.g., ABC1234)" style="margin-bottom: 5px;">
-                        <select id="vehicleTypeInput" style="margin-bottom: 5px;">
-                            <option value="">-- Select Vehicle Type --</option>
-                            <option value="Motorcycle">Motorcycle</option>
-                            <option value="E-Trike">E-Trike</option>
-                            <option value="Tricycle">Tricycle</option>
-                            <option value="Jeepney">Jeepney</option>
-                            <option value="Bus">Bus</option>
-                        </select>
-                        <input type="number" id="capacityInput" placeholder="Capacity (Max Seats)" min="1" style="margin-bottom: 5px;">
-                        <button id="registerVehicleBtn" style="width: 100%; background-color: #28a745;">Register Vehicle</button>
-                    </div>
-                </div>
-                
-                <div id="viewer-selection-container" style="display: none; padding: 10px 0;">
-                    <h4>Select Route to View:</h4>
-                    <select id="routeToTrackSelect" style="margin-bottom: 5px;">
-                        <option value="">-- Start Location is Being Determined... --</option>
-                    </select>
-                    <h4>Select Vehicle Plate No.:</h4>
-                    <select id="vehicleToTrackSelect" disabled>
-                        <option value="">-- Choose Vehicle on Selected Route --</option>
-                    </select>
-                    <button id="setVehicleButton" style="width: 100%; margin-top: 5px; background-color: #007bff;" disabled>Confirm Vehicle to Track</button>
-                    
-                    <div id="passenger-seat-report-form" style="margin-top: 15px; padding: 10px; border: 1px solid #ccc; border-radius: 4px; display: none;">
-                        <h5>Contribute Seat Count</h5>
-                        <div style="display: flex; gap: 5px;">
-                            <input type="number" id="passengerSeatReportInput" placeholder="Report Empty Seats" min="0" style="flex-grow: 1;">
-                            <button id="submitSeatReportBtn" style="background-color: #007bff; color: white;">Submit</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="sharer-route-control" class="controls" style="flex-direction: column; align-items: stretch; gap: 10px; display: none;">
-                    <h4>Manual Route Setting</h4>
-                    <div style="display: flex; flex-direction: column; gap: 5px; padding: 10px; border: 1px solid #ccc; border-radius: 4px;">
-                        <label for="startTerminalSelect">Starting Point:</label>
-                        <select id="startTerminalSelect">
-                            <option value="">-- Auto-Detect (Default) --</option>
-                        </select>
-                        
-                        <label for="endTerminalSelect">Destination Point:</label>
-                        <select id="endTerminalSelect" disabled>
-                            <option value="">-- Select Route & Destination --</option>
-                        </select>
-
-                        <button id="drawManualRouteButton" class="share-btn" style="background-color: #007bff;">Show Route</button>
-                        <button id="clearManualRouteButton" class="stop-btn">Clear Route</button>
-                    </div>
-                </div>
-            </div>
-
-
-            <div id="terminal-tools-container" style="display: none;">
-                <h4 id="toggleTerminalMenuBtn" style="cursor: pointer; background-color: #007bff; color: white; padding: 10px; border-radius: 4px;">Stop/Station Manager ▼</h4>
-                
-                <div id="terminal-submenu" class="controls" style="display: none; flex-direction: column; align-items: stretch; gap: 10px;">
-                    
-                    <hr style="width: 100%;">
-
-                    <h4>Add New Stop/Station</h4>
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                        <input type="text" id="terminalNameInput" placeholder="Name (e.g., Cubao Stop)">
-                        <input type="text" id="routeIdInput" placeholder="Route ID (e.g., R-1A)" style="flex-grow: 1;">
-                        <button id="captureGPSButton" class="share-btn">📍 Capture My GPS</button>
-                    </div>
-                    
-                    <button id="dropPinButton" class="share-btn">📌 Click Map to Drop Pin</button>
-                    <div id="pin-location-display" style="font-style: italic; color: #555; text-align: center;"></div>
-                    
-                    <button id="savePinButton" class="share-btn" disabled>💾 Save Pinned Stop/Station</button>
-                </div>
-            </div>
-
-            <hr style="width: 100%;">
-            <div class="controls" style="padding-top: 10px;">
-                <button id="signOutButton" style="background-color: #6c757d; color: white; display: none;">Sign Out</button>
-            </div>
-            
+    <div id="auth-screen">
+        <div class="auth-card">
+            <h1 style="font-size: 1.5rem; margin-bottom: 5px;">Admin Login</h1>
+            <p style="color: #64748b; font-size: 0.8rem; margin-bottom: 20px;">Restricted Access Only</p>
+            <input type="email" id="login-email" placeholder="Email">
+            <input type="password" id="login-pass" placeholder="Password">
+            <button onclick="handleLogin()">Authorize Access</button>
+            <p id="auth-error" style="color: var(--danger); font-size: 0.75rem; margin-top: 10px; display: none;"></p>
         </div>
     </div>
-    <div id="sidebar-overlay" onclick="toggleSidebar()"></div>
 
-    <div id='map'></div>
+    <div class="sidebar" id="sidebar">
+        <h2 style="color: var(--accent); font-size: 1rem; margin-bottom: 25px;">MASTER CONSOLE</h2>
+        <div class="nav-btn active" onclick="switchView('user_profiles', this)">Users (user_profiles)</div>
+        <div class="nav-btn" onclick="switchView('vehicles', this)">Fleet (vehicles)</div>
+        <div class="nav-btn" onclick="switchView('active_routes', this)">Routes (active_routes)</div>
+        <div class="nav-btn" onclick="switchView('terminals', this)">Terminals (terminals)</div>
+        <div class="nav-btn" onclick="switchView('live', this)" style="margin-top:20px; border: 1px solid #334155;">🛰️ LIVE VIEW</div>
+        <button onclick="handleLogout()" style="margin-top: auto; padding: 10px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer;">Logout</button>
+    </div>
+
+    <div class="main" id="main-content">
+        <div class="header" style="background:white; padding:15px 30px; border-bottom: 1px solid #e2e8f0;">
+            <h1 id="view-title" style="margin:0; font-size: 1.1rem;">User Profiles</h1>
+        </div>
+        <div class="view-container" style="padding: 25px; flex: 1; overflow-y: auto;">
+            <div id="view-table" class="section active">
+                <table id="master-table">
+                    <thead id="table-head"></thead>
+                    <tbody id="table-body"></tbody>
+                </table>
+            </div>
+            <div id="view-live" class="section">
+                <div id="admin-map"></div>
+            </div>
+        </div>
+    </div>
 
     <script>
-        // --- CONFIGURATION ---
-        const SUPABASE_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
-        mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
-        
-        // 🛑 IMPORTANT: Update these UUIDs with your Supabase auth.users IDs for Admin access.
-        const ADMIN_SHARER_IDS = [
-            '20d2c77d-4177-44f2-98ed-7389c9913000', 
-            '8a0e8d0d-2e11-4f9e-9b37-2917d598377a'  
-        ]; 
-        
-        const DEFAULT_CENTER = [121.0284546, 14.928021]; 
-        const SPEED_THRESHOLDS = { FAST: 8.33, MODERATE: 2.78, SLOW: 0.5 };
-        const MIN_MOVEMENT_SPEED_MS = 0.5; // Used for heading check
-        const PING_RATE_MS = 30000; 
-        const MIN_STOP_TIME_MS = 180000; 
-        const PROXIMITY_THRESHOLD_M = 100; 
-        const BEACON_TERMINAL_PROXIMITY_M = 500; 
-
-        // --- GLOBAL STATE & IDS ---
-        let intervalID = null; 
-        let isTracking = false;
-        const activeMarkers = new Map(); 
-        const activeTerminalMarkers = new Map(); 
-        let currentPlateNumber = null; 
-        let currentVehicleType = null;
-        let currentVehicleCapacity = null; 
-        let occupiedSeats = 0; 
-        let allTerminals = []; 
-        let currentUserRole = null;
-        let isSharingBeacon = false; // <<< NEW STATE VARIABLE for passenger sharing
-        let currentTrip = { isTrackingTrip: false, startPoint: null, lastStop: null, stopTimer: null, identifiedStartTerminal: null, identifiedEndTerminal: null };
-        let isPinningMode = false;
-        let tempTerminalMarker = null;
-        let tempPinLocation = null;
-        const TRIP_ROUTE_SOURCE_ID = 'trip-route-source';
-        const TRIP_ROUTE_LAYER_ID = 'trip-route-layer';
-        let deviceOrientationHeading = null; 
-        let nearbyRoutes = []; 
-
-        // --- DOM Elements & Supabase Client ---
-        const sidebarMenu = document.getElementById('sidebar-menu');
-        const sidebarOverlay = document.getElementById('sidebar-overlay');
-        const statusDiv = document.getElementById('status');
-        const authContainer = document.getElementById('auth-container');
-        const sharerControlsContainer = document.getElementById('sharer-controls-container');
-        const terminalToolsContainer = document.getElementById('terminal-tools-container');
-        const loginButton = document.getElementById('loginButton');
-        const emailInput = document.getElementById('email'); 
-        const passwordInput = document.getElementById('password'); 
-        const signOutButton = document.getElementById('signOutButton'); 
-        const signupContainer = document.getElementById('signup-container');
-        const showSignupLink = document.getElementById('showSignupLink');
-        const showLoginLink = document.getElementById('showLoginLink');
-        const signupButton = document.getElementById('signupButton');
-        const signupNameInput = document.getElementById('signup-name');
-        const signupEmailInput = document.getElementById('signup-email');
-        const signupPasswordInput = document.getElementById('signup-password');
-        
-        // FLOATING BUTTON
-        const floatingTrackingBtn = document.getElementById('floating-tracking-btn');
-        
-        // NEW SETUP CONTROLS
-        const userRoleSelect = document.getElementById('userRoleSelect');
-        const saveRoleButton = document.getElementById('saveRoleButton');
-        
-        // VEHICLE MANAGEMENT ELEMENTS
-        const newPlateInput = document.getElementById('newPlateInput');
-        const vehicleTypeInput = document.getElementById('vehicleTypeInput');
-        const capacityInput = document.getElementById('capacityInput');
-        const registerVehicleBtn = document.getElementById('registerVehicleBtn');
-        const driverVehicleSelect = document.getElementById('driverVehicleSelect');
-        const selectVehicleToShareBtn = document.getElementById('selectVehicleToShareBtn');
-        const driverStatusDisplay = document.getElementById('driver-status-display');
-        const driverSeatInputGroup = document.getElementById('driver-seat-input-group');
-
-        // NEW COLLAPSIBLE ELEMENTS
-        const toggleRegistrationBtn = document.getElementById('toggleRegistrationBtn');
-        const vehicleRegistrationContainer = document.getElementById('vehicle-registration-container');
-
-        // ON-MAP SEAT CONTROLS
-        const onMapControls = document.getElementById('on-map-controls');
-        const minusSeatBtn = document.getElementById('minusSeatBtn');
-        const plusSeatBtn = document.getElementById('plusSeatBtn');
-        const occupiedSeatsDisplay = document.getElementById('occupiedSeatsDisplay');
-        const capacityLabel = document.getElementById('capacityLabel');
-        const submitSeatUpdateBtn = document.getElementById('submitSeatUpdateBtn');
-
-        // VIEWER CONTROLS
-        const viewerSelectionContainer = document.getElementById('viewer-selection-container');
-        const routeToTrackSelect = document.getElementById('routeToTrackSelect');
-        const vehicleToTrackSelect = document.getElementById('vehicleToTrackSelect');
-        const setVehicleButton = document.getElementById('setVehicleButton');
-        const passengerSeatReportInput = document.getElementById('passengerSeatReportInput');
-        const submitSeatReportBtn = document.getElementById('submitSeatReportBtn');
-        const passengerSeatReportForm = document.getElementById('passenger-seat-report-form');
-
-        
-        // SHARER CONTROLS
-        const startTerminalSelect = document.getElementById('startTerminalSelect');
-        const endTerminalSelect = document.getElementById('endTerminalSelect');
-        const drawManualRouteButton = document.getElementById('drawManualRouteButton');
-        const clearManualRouteButton = document.getElementById('clearManualRouteButton');
-        const sharerRouteControl = document.getElementById('sharer-route-control'); 
-        const loginErrorMessageDiv = document.getElementById('login-error-message'); 
-        
-        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        
-        // --- SIDEBAR TOGGLE FUNCTION ---
-        function toggleSidebar() {
-            sidebarMenu.classList.toggle('open');
-            sidebarOverlay.classList.toggle('open');
-        }
-
-        // --- DEVICE ORIENTATION ---
-        function handleDeviceOrientation(event) {
-            let heading = event.alpha;
-            if (typeof event.webkitCompassHeading !== 'undefined') {
-                heading = event.webkitCompassHeading;
-            }
-            if (heading !== null) {
-                // Mapbox rotation (0 is North, clockwise)
-                deviceOrientationHeading = heading < 0 ? 360 + heading : heading;
-            }
-        }
-        window.addEventListener('deviceorientation', handleDeviceOrientation, true);
-        
-        // --- UTILITY FUNCTIONS ---
-        function getSpeedColor(speed) {
-            if (speed >= SPEED_THRESHOLDS.FAST) return '#28a745'; 
-            if (speed >= SPEED_THRESHOLDS.MODERATE) return '#ffc107'; 
-            if (speed > SPEED_THRESHOLDS.SLOW) return '#fd7e14'; 
-            return '#dc3545'; 
-        }
-
-        function getHaversineDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371e3;
-            const φ1 = lat1 * Math.PI/180;
-            const φ2 = lat2 * Math.PI/180;
-            const Δφ = (lat2-lat1) * Math.PI/180;
-            const Δλ = (lon2-lon1) * Math.PI/180;
-            const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) * Math.sin(Δλ/2);
-            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-            return R * c;
-        }
-        
-        function simpleSnap(rawLat, rawLon, accuracy) {
-            const precision = accuracy > 10 ? 4 : 5; 
-            return { 
-                lat: parseFloat(rawLat.toFixed(precision)), 
-                lon: parseFloat(rawLon.toFixed(precision)) 
-            }; 
-        }
-        
-        // --- GEOLOCATION ERROR HANDLER (FIX for ReferenceError) ---
-        function handleGeolocationError(err) {
-            console.error("Geolocation Error:", err);
-            
-            // Display a user-friendly error message on the status bar
-            statusDiv.textContent = `GPS Error (${err.code}): ${err.message}. Sharing Stopped.`;
-            statusDiv.style.color = '#dc3545';
-            
-            // Stop the location sharing process immediately to prevent further errors
-            stopLocationSharing(); 
-        }
-
-        // --- MAPBOX & TERMINAL DISPLAY ---
-        function updateMarker(data) {
-            const plateNumber = data.plate_number;
-            if (!data.latitude || !data.longitude || !plateNumber) return; 
-            
-            const isPassengerBeacon = plateNumber.startsWith('user-'); // <<< NEW CHECK
-            
-            const type = data.vehicle_type || 'default';
-            const newLngLat = [data.longitude, data.latitude];
-            const speed = data.speed || 0;
-            const heading = data.heading || 0; 
-            const speedKPH = speed * 3.6;
-            
-            let marker = activeMarkers.get(plateNumber);
-            
-            if (!marker) {
-                const el = document.createElement('div');
-                let popupContent = '';
-
-                if (isPassengerBeacon) {
-                    el.className = 'terminal-marker'; // Use a simple circle for passenger
-                    el.style.backgroundColor = '#ff5722'; // Orange/Red color for beacon
-                    el.textContent = '👤';
-                    el.style.width = '25px';
-                    el.style.height = '25px';
-                    el.style.fontSize = '14px';
-                    popupContent = `
-                        <h4>Passenger Beacon</h4>
-                        <p>Waiting for transport (Speed: ${speedKPH.toFixed(1)} km/h)</p>
-                    `;
-                } else {
-                    const arrowColor = getSpeedColor(speed);
-                    el.className = 'direction-arrow';
-                    el.style.borderBottomColor = arrowColor;
-                    el.style.transform = `rotate(${heading}deg)`; 
-
-                    const emptySeats = data.empty_seats !== null ? data.empty_seats : 'N/A';
-                    const capacityFromType = currentVehicleCapacity || 'N/A'; // Assuming driver has capacity set
-                    const occupied = (capacityFromType !== 'N/A' && emptySeats !== 'N/A') ? (capacityFromType - emptySeats) : (data.total_passengers !== null ? data.total_passengers : 'N/A');
-
-                    popupContent = `
-                        <h4>${type.toUpperCase()} Plate No.: ${plateNumber}</h4>
-                        <p>Speed: ${speedKPH.toFixed(1)} km/h<br>Heading: ${heading.toFixed(0)}&deg;</p>
-                        <p>Occupied Seats: <b>${occupied}</b> | Empty Seats: <b>${emptySeats}</b></p>
-                    `;
-                }
-
-                marker = new mapboxgl.Marker({ element: el, anchor: 'center' }) 
-                    .setLngLat(newLngLat)
-                    .setPopup(new mapboxgl.Popup({ offset: 25 }).setHTML(popupContent)) 
-                    .addTo(map);
-                activeMarkers.set(plateNumber, marker);
-            }
-            
-            const markerElement = marker.getElement();
-            
-            if (!isPassengerBeacon) {
-                // Update driver marker visuals
-                const arrowColor = getSpeedColor(speed);
-                markerElement.style.borderBottomColor = arrowColor;
-                markerElement.style.transform = `rotate(${heading}deg)`;
-                
-                // Update driver popup content
-                const emptySeats = data.empty_seats !== null ? data.empty_seats : 'N/A';
-                let capacityFromType = 0;
-                if (currentPlateNumber === plateNumber && currentVehicleCapacity) {
-                     capacityFromType = currentVehicleCapacity;
-                } 
-                const occupied = (capacityFromType && emptySeats !== 'N/A') ? (capacityFromType - emptySeats) : (data.total_passengers !== null ? data.total_passengers : 'N/A');
-
-                marker.setLngLat(newLngLat)
-                         .getPopup()
-                        .setHTML(`
-                            <h4>${type.toUpperCase()} Plate No.: ${plateNumber}</h4>
-                            <p>Speed: ${speedKPH.toFixed(1)} km/h<br>Heading: ${heading.toFixed(0)}&deg;</p>
-                            <p>Occupied Seats: <b>${occupied}</b> | Empty Seats: <b>${emptySeats}</b></p>
-                        `);
-            } else {
-                 // Update passenger popup content
-                 marker.setLngLat(newLngLat)
-                         .getPopup()
-                        .setHTML(`
-                            <h4>Passenger Beacon</h4>
-                            <p>Waiting for transport (Speed: ${speedKPH.toFixed(1)} km/h)</p>
-                        `);
-            }
-
-            // Auto-follow current tracking ID (sharer or viewer's selected vehicle)
-            const isCurrentUser = isTracking && plateNumber === currentPlateNumber;
-            const isViewerTracking = !isTracking && plateNumber === currentPlateNumber;
-
-            if (isCurrentUser || isViewerTracking) {
-                 map.flyTo({ center: newLngLat, speed: 0.5 });
-            }
-            
-            if (!isCurrentUser && !isPassengerBeacon) {
-                fetchAndDisplayViewerRoute(plateNumber, data.latitude, data.longitude); 
-            }
-        }
-
-        async function fetchAndDisplayAllTerminals() {
-            const { data, error } = await supabaseClient.from('terminals').select('*');
-            if (error) { console.error('Error fetching terminals:', error.message); return; }
-            startTerminalSelect.innerHTML = '<option value="">-- Auto-Detect (Default) --</option>';
-            endTerminalSelect.innerHTML = '<option value="">-- Select Route & Destination --</option>';
-            endTerminalSelect.disabled = true;
-            activeTerminalMarkers.forEach(marker => marker.remove());
-            activeTerminalMarkers.clear();
-            allTerminals = data;
-            allTerminals.forEach(terminal => {
-                const option = document.createElement('option');
-                option.value = terminal.id;
-                option.textContent = `${terminal.name} (Route: ${terminal.route_id || 'N/A'})`;
-                startTerminalSelect.appendChild(option);
-                const el = document.createElement('div');
-                el.className = 'terminal-marker';
-                el.textContent = terminal.name[0].toUpperCase();
-                const marker = new mapboxgl.Marker({ element: el, anchor: 'center' })
-                    .setLngLat([terminal.longitude, terminal.latitude])
-                    .setPopup(new mapboxgl.Popup({ offset: 25 }).setHTML(`<b>${terminal.name}</b><br>Route ID: ${terminal.route_id || 'N/A'}`))
-                    .addTo(map);
-                activeTerminalMarkers.set(terminal.id, marker);
-            });
-            console.log(`Loaded ${allTerminals.length} terminals and populated dropdowns.`);
-        }
-
-        async function fetchAndDisplayRoute(startTerminal, endTerminal, currentLat, currentLon) {
-            const startCoords = `${startTerminal.longitude},${startTerminal.latitude}`;
-            const endCoords = `${endTerminal.longitude},${endTerminal.latitude}`;
-            
-            const currentCoords = `${currentLon},${currentLat}`;
-
-            const coordsString = `${startCoords};${currentCoords};${endCoords}`;
-            
-            const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordsString}?geometries=geojson&access_token=${mapboxgl.accessToken}`;
-
-            try {
-                const response = await fetch(url);
-                const data = await response.json();
-
-                if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
-                    const route = data.routes[0].geometry;
-                    const geoJson = {
-                        type: 'FeatureCollection',
-                        features: [{ type: 'Feature', geometry: route }]
-                    };
-                    
-                    const routeSource = map.getSource(TRIP_ROUTE_SOURCE_ID);
-                    if (routeSource) {
-                        routeSource.setData(geoJson);
-                    } else {
-                        console.error(`ERROR: Map source '${TRIP_ROUTE_SOURCE_ID}' not found. Cannot draw route.`);
-                    }
-
-                } else {
-                    console.warn('Mapbox Directions API error:', data.code, data.message || 'Unknown error');
-                }
-            } catch (apiError) {
-                console.error('Error fetching Mapbox Directions:', apiError);
-            }
-        }
-
-        async function fetchAndDisplayViewerRoute(plateNumber, currentLat, currentLon) { 
-            if (plateNumber === currentPlateNumber || plateNumber.startsWith('user-')) {
-                 clearDisplayedRoute(); 
-            }
-
-            const { data, error } = await supabaseClient
-                .from('active_routes')
-                .select('*')
-                .eq('plate_number', plateNumber) 
-                .eq('is_active', true); 
-
-            if (error) { console.error('Error fetching viewer route:', error.message); return; }
-            if (!data || data.length === 0) { return; }
-
-            const routeData = data[0]; 
-
-            const startTerminal = { latitude: routeData.start_lat, longitude: routeData.start_lon, name: routeData.start_name };
-            const endTerminal = { latitude: routeData.end_lat, longitude: routeData.end_lon, name: routeData.end_name };
-            
-            fetchAndDisplayRoute(startTerminal, endTerminal, currentLat, currentLon); 
-        }
-
-        function clearDisplayedRoute() {
-            if (map.getSource(TRIP_ROUTE_SOURCE_ID)) {
-                map.getSource(TRIP_ROUTE_SOURCE_ID).setData({ type: 'FeatureCollection', features: [] });
-            }
-        }
-
-        function subscribeToLocationUpdates() { 
-            supabaseClient.channel('all_vehicles') 
-                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'vehicle_location' }, (payload) => {
-                    updateMarker(payload.new);
-                })
-                .subscribe();
-            
-            supabaseClient.channel('all_terminals')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'terminals' }, (payload) => {
-                    fetchAndDisplayAllTerminals(); 
-                })
-                .subscribe();
-                
-            supabaseClient.channel('vehicles_list')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicles' }, async (payload) => {
-                    const userId = (await supabaseClient.auth.getUser()).data.user?.id;
-                    if (userId && currentUserRole === 'driver') {
-                        await fetchDriverVehicles(userId);
-                    }
-                })
-                .subscribe();
-        }
-
-        // --- MAP INITIALIZATION ---
-        const map = new mapboxgl.Map({
-            container: 'map',
-            style: 'mapbox://styles/mapbox/streets-v12',
-            center: DEFAULT_CENTER,
-            zoom: 12
-        });
-        map.on('click', handleMapClick);
-        map.on('load', async () => {
-             map.addSource(TRIP_ROUTE_SOURCE_ID, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-             map.addLayer({
-                 id: TRIP_ROUTE_LAYER_ID,
-                 type: 'line',
-                 source: TRIP_ROUTE_SOURCE_ID,
-                 layout: { 'line-join': 'round', 'line-cap': 'round' },
-                 paint: { 'line-color': '#0099ff', 'line-width': 6, 'line-opacity': 0.7 }
-             });
-             const { data: vehicleData } = await supabaseClient.from('vehicle_location').select('*');
-             if (vehicleData) vehicleData.forEach(updateMarker);
-             
-             // ✅ INITIAL TERMINAL LOAD - ONLY ONCE
-             await fetchAndDisplayAllTerminals(); 
-             
-             subscribeToLocationUpdates(); 
-        });
-
-        // --- PINNING AND TERMINAL MANAGEMENT ---
-        function togglePinningMode() {
-            isPinningMode = !isPinningMode;
-            const button = document.getElementById('dropPinButton');
-            const display = document.getElementById('pin-location-display');
-            const mapCanvas = map.getCanvasContainer();
-            if (isPinningMode) {
-                button.textContent = '❌ Cancel Pin Drop';
-                button.classList.remove('share-btn');
-                button.classList.add('stop-btn');
-                display.textContent = 'Pin Drop mode is ON. Click map to place stop/station.';
-                mapCanvas.style.cursor = 'crosshair';
-                toggleSidebar(); 
-            } else {
-                button.textContent = '📌 Click Map to Drop Pin';
-                button.classList.remove('stop-btn');
-                button.classList.add('share-btn');
-                mapCanvas.style.cursor = '';
-                clearTempPin();
-            }
-        }
-
-        function handleMapClick(e) {
-            if (!isPinningMode) return;
-            clearTempPin();
-            const lat = e.lngLat.lat;
-            const lon = e.lngLat.lon;
-            tempPinLocation = { lat: lat, lon: lon };
-            const el = document.createElement('div');
-            el.className = 'terminal-marker';
-            el.textContent = '?'; 
-            el.style.backgroundColor = '#ffc107'; 
-            tempTerminalMarker = new mapboxgl.Marker({ element: el, anchor: 'center' })
-                .setLngLat([lon, lat]) // FIX HERE: [longitude, latitude]
-                .addTo(map);
-            document.getElementById('pin-location-display').textContent = `Pin Dropped at: Lat ${lat.toFixed(4)}, Lon ${lon.toFixed(4)}`;
-            document.getElementById('savePinButton').disabled = false;
-        }
-
-        function clearTempPin() {
-            if (tempTerminalMarker) {
-                tempTerminalMarker.remove();
-                tempTerminalMarker = null;
-            }
-            tempPinLocation = null;
-            document.getElementById('pin-location-display').textContent = '';
-            document.getElementById('savePinButton').disabled = true;
-        }
-
-        function savePinnedTerminal() {
-            const terminalName = document.getElementById('terminalNameInput').value;
-            const routeId = document.getElementById('routeIdInput').value.toUpperCase();
-            if (!terminalName) { alert("Please enter a name for the new stop/station!"); return; }
-            if (!tempPinLocation) { alert("No pin dropped. Click the map first!"); return; }
-            writeTerminalToSupabase(terminalName, tempPinLocation.lat, tempPinLocation.lon, routeId);
-            togglePinningMode();
-        }
-
-        function captureAndSaveTerminal() {
-            const terminalName = document.getElementById('terminalNameInput').value;
-            const routeId = document.getElementById('routeIdInput').value.toUpperCase();
-            if (!terminalName) { alert("Please enter a name!"); return; }
-            if (!navigator.geolocation) { alert('Geolocation not supported.'); return; }
-            const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
-            navigator.geolocation.getCurrentPosition(async (position) => {
-                await writeTerminalToSupabase(terminalName, position.coords.latitude, position.coords.longitude, routeId);
-                toggleSidebar(); 
-            }, (err) => {
-                alert(`Could not get GPS location: ${err.message}`);
-            }, options);
-        }
-        
-        async function writeTerminalToSupabase(name, lat, lon, routeId) {
-            statusDiv.textContent = `Attempting to save ${name} (Route ${routeId || 'N/A'})...`;
-            const { error } = await supabaseClient
-                .from('terminals')
-                .insert({
-                    name: name, latitude: lat, longitude: lon, route_id: routeId || null 
-                });
-            if (error) {
-                console.error('Terminal save error:', error);
-                statusDiv.textContent = `ERROR saving stop/station: ${error.message}`;
-                statusDiv.style.color = '#dc3545';
-            } else {
-                statusDiv.textContent = `Successfully SAVED new stop/station: ${name}!`;
-                document.getElementById('terminalNameInput').value = '';
-                document.getElementById('routeIdInput').value = ''; 
-                // Note: The Supabase subscription will automatically trigger fetchAndDisplayAllTerminals()
-            }
-        }
-        
-        // --- VEHICLE MANAGEMENT FUNCTIONS ---
-        async function fetchDriverVehicles(userId) {
-            const { data, error } = await supabaseClient
-                .from('vehicles')
-                .select('*')
-                .eq('owner_user_id', userId);
-
-            driverVehicleSelect.innerHTML = '<option value="">-- Select Vehicle to Share Location --</option>';
-            if (error || !data || data.length === 0) {
-                 driverStatusDisplay.textContent = 'No vehicles registered to your account.';
-                 selectVehicleToShareBtn.disabled = true;
-                 return;
-            }
-            
-            data.forEach(vehicle => {
-                const option = document.createElement('option');
-                option.value = vehicle.plate_number;
-                option.textContent = `${vehicle.plate_number} (${vehicle.vehicle_type}, Cap: ${vehicle.capacity})`;
-                option.dataset.type = vehicle.vehicle_type;
-                option.dataset.capacity = vehicle.capacity;
-                driverVehicleSelect.appendChild(option);
-            });
-            driverStatusDisplay.textContent = `Found ${data.length} vehicle(s) registered.`;
-            selectVehicleToShareBtn.disabled = false;
-        }
-
-        async function registerNewVehicle() {
-            const userId = (await supabaseClient.auth.getUser()).data.user?.id;
-            const plate = newPlateInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').trim(); 
-            const type = vehicleTypeInput.value; 
-            const capacity = parseInt(capacityInput.value);
-
-            if (!plate || plate.length < 4 || !type || !capacity || capacity < 1) { 
-                alert("Please enter a valid Plate (Alphanumeric, min 4), select a Type, and enter a valid Capacity."); 
-                return; 
-            }
-
-            const { error } = await supabaseClient
-                .from('vehicles')
-                .upsert({
-                    plate_number: plate,
-                    vehicle_type: type,
-                    capacity: capacity,
-                    owner_user_id: userId 
-                }, { onConflict: 'plate_number' });
-
-            if (error) {
-                if (error.code === '23505') { 
-                     alert(`Plate ${plate} is already registered! If you believe this is an error, check ownership.`); 
-                } else {
-                     console.error("Vehicle registration error:", error);
-                     alert(`Error registering vehicle: ${error.message}`);
-                }
-            } else {
-                alert(`Vehicle ${plate} registered and linked to your account.`);
-                newPlateInput.value = '';
-                vehicleTypeInput.value = '';
-                capacityInput.value = '';
-                await fetchDriverVehicles(userId);
-            }
-        }
-
-        function setVehicleForSharing() {
-            const selectedOption = driverVehicleSelect.options[driverVehicleSelect.selectedIndex];
-            if (!selectedOption.value) {
-                alert("Please select a registered vehicle.");
-                return;
-            }
-
-            currentPlateNumber = selectedOption.value;
-            currentVehicleType = selectedOption.dataset.type;
-            currentVehicleCapacity = parseInt(selectedOption.dataset.capacity);
-            isSharingBeacon = false; // Ensure beacon mode is off for drivers
-            
-            // Initialize on-map controls
-            occupiedSeats = 0; 
-            capacityLabel.textContent = `Capacity: ${currentVehicleCapacity} seats`;
-            occupiedSeatsDisplay.textContent = occupiedSeats;
-            
-            driverStatusDisplay.textContent = `Selected: ${currentPlateNumber}. Set seats and start sharing.`;
-            statusDiv.textContent = `Selected vehicle ${currentPlateNumber}. Ready to share.`;
-            statusDiv.style.color = '#28a745';
-            
-            // Re-enable floating button with correct state
-            floatingTrackingBtn.disabled = false;
-            
-            sharerRouteControl.style.display = 'flex';
-            updateUI(supabaseClient.auth.getUser().data.user?.id); // Update button visuals
-            toggleSidebar();
-        }
-
-        // --- VIEWER/PASSENGER LOGIC ---
-        
-        function identifyNearbyRoutes() {
-            // ... (Only run if not currently sharing a beacon)
-            if (isSharingBeacon) return; 
-            
-            viewerSelectionContainer.style.display = 'block';
-            passengerSeatReportForm.style.display = 'none'; 
-            routeToTrackSelect.innerHTML = '<option value="">-- Searching for Nearby Stops/Stations... --</option>';
-            if (!navigator.geolocation) {
-                routeToTrackSelect.innerHTML = '<option value="">Geolocation not supported.</option>';
-                return;
-            }
-
-            const options = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
-            navigator.geolocation.getCurrentPosition(position => {
-                const currentLat = position.coords.latitude;
-                const currentLon = position.coords.longitude;
-                
-                const nearbyTerminals = allTerminals.filter(terminal => {
-                    return getHaversineDistance(currentLat, currentLon, terminal.latitude, terminal.longitude) < BEACON_TERMINAL_PROXIMITY_M;
-                });
-
-                const routeIds = [...new Set(nearbyTerminals.map(t => t.route_id).filter(id => id))];
-                nearbyRoutes = routeIds;
-                
-                routeToTrackSelect.innerHTML = '<option value="">-- Select a Nearby Route --</option>';
-                if (routeIds.length === 0) {
-                    routeToTrackSelect.innerHTML = '<option value="">No active stops/stations within 500m.</option>';
-                } else {
-                    routeIds.forEach(id => {
-                        const option = document.createElement('option');
-                        option.value = id;
-                        option.textContent = `Route: ${id}`;
-                        routeToTrackSelect.appendChild(option);
-                    });
-                }
-                vehicleToTrackSelect.disabled = false;
-                setVehicleButton.disabled = false;
-            }, (err) => {
-                routeToTrackSelect.innerHTML = `<option value="">GPS Error: ${err.code}</option>`;
-                console.error("Geolocation Error for Nearby Routes:", err);
-            }, options);
-        }
-
-        async function fetchVehiclesOnRoute(routeId) {
-            vehicleToTrackSelect.innerHTML = '<option value="">-- Loading Vehicles... --</option>';
-            if (!routeId) {
-                vehicleToTrackSelect.innerHTML = '<option value="">-- Choose Vehicle on Selected Route --</option>';
-                return;
-            }
-            
-            const { data, error } = await supabaseClient
-                .from('active_routes')
-                .select('plate_number') 
-                .eq('route_id', routeId)
-                .eq('is_active', true);
-
-            if (error) {
-                console.error("Error fetching vehicles for route:", error);
-                vehicleToTrackSelect.innerHTML = '<option value="">Error loading vehicles.</option>';
-                return;
-            }
-
-            vehicleToTrackSelect.innerHTML = '<option value="">-- Choose Vehicle Plate No. --</option>';
-            data.forEach(route => {
-                const option = document.createElement('option');
-                option.value = route.plate_number;
-                option.textContent = `Plate No: ${route.plate_number}`;
-                vehicleToTrackSelect.appendChild(option);
-            });
-
-            if (data.length === 0) {
-                vehicleToTrackSelect.innerHTML = '<option value="">No vehicles currently active on this route.</option>';
-            }
-        }
-
-        function setVehicleAsBeacon() {
-            const selectedPlateNumber = vehicleToTrackSelect.value;
-            if (!selectedPlateNumber) {
-                alert("Please select a vehicle to track first.");
-                return;
-            }
-            if(isTracking) stopLocationSharing(); 
-            
-            currentPlateNumber = selectedPlateNumber;
-            isSharingBeacon = false; // Ensure tracking mode
-            statusDiv.textContent = `Tracking Plate No. ${currentPlateNumber}...`;
-            statusDiv.style.color = '#007bff';
-            
-            passengerSeatReportForm.style.display = 'block'; 
-            toggleSidebar(); 
-        }
-
-        async function submitSeatReport() {
-            if (!currentPlateNumber) {
-                alert("Please select a vehicle to track first."); return;
-            }
-            
-            const reportedSeats = parseInt(passengerSeatReportInput.value);
-            
-            if (isNaN(reportedSeats) || reportedSeats < 0) {
-                alert("Please enter a valid number of empty seats."); return;
-            }
-
-            statusDiv.textContent = `Submitting seat report...`;
-
-            const { error } = await supabaseClient
-                .from('vehicle_location')
-                .update({
-                    empty_seats: reportedSeats
-                })
-                .eq('plate_number', currentPlateNumber);
-
-            if (error) {
-                alert(`Failed to report seats. Error: ${error.message}`);
-                statusDiv.textContent = `ERROR submitting seats: ${error.message}`;
-                statusDiv.style.color = '#dc3545';
-                console.error("Seat report error:", error);
-            } else {
-                statusDiv.textContent = `Successfully reported ${reportedSeats} empty seats for ${currentPlateNumber}!`;
-                passengerSeatReportInput.value = '';
-            }
-        }
-
-
-        // --- AUTHENTICATION FUNCTIONS ---
-        async function handleLogin() {
-            const email = emailInput.value;
-            const password = passwordInput.value;
-            loginErrorMessageDiv.textContent = '';
-            statusDiv.textContent = 'Logging in...';
-
-            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-
-            if (error) {
-                console.error("Login error:", error);
-                loginErrorMessageDiv.textContent = `Login failed: ${error.message}`;
-                statusDiv.textContent = 'Login Required.';
-                return;
-            }
-
-            if (data.user) {
-                const user = data.user;
-                await checkUserRole(user.id);
-                updateUI(user.id);
-            }
-        }
-
-        async function handleSignUp() {
-            const email = signupEmailInput.value;
-            const password = signupPasswordInput.value;
-            const name = signupNameInput.value;
-            
-            if (!email || !password || !name) {
-                alert("Please fill in all required fields.");
-                return;
-            }
-
-            const { error: authError } = await supabaseClient.auth.signUp({ 
-                email, 
-                password,
-                options: {
-                    data: { full_name: name, role: 'viewer' } 
-                }
-            });
-
-            if (authError) {
-                alert(`Sign Up Error: ${authError.message}`);
-                return;
-            }
-            
-            alert('Account created! Please check your email for a confirmation link.');
-            showLoginLink.click();
-        }
-
-        async function handleSignOut() {
-            if (isTracking) stopLocationSharing(); 
-
-            const { error } = await supabaseClient.auth.signOut();
-            if (error) {
-                console.error("Sign out error:", error);
-                return;
-            }
-            currentUserRole = null;
-            currentPlateNumber = null;
-            isTracking = false;
-            isSharingBeacon = false;
-            occupiedSeats = 0; 
-            onMapControls.style.display = 'none'; 
-            if (intervalID) clearInterval(intervalID);
-            updateUI(null);
-            clearDisplayedRoute();
-        }
-
-        async function saveUserRoleSetup() {
-            const userId = (await supabaseClient.auth.getUser()).data.user?.id;
-            if (!userId) return;
-
-            const newRole = userRoleSelect.value;
-
-            if (!newRole) {
-                alert("Please select a role.");
-                return;
-            }
-
-            const { error } = await supabaseClient
-                .from('user_profiles') 
-                .update({ 
-                    role: newRole
-                })
-                .eq('id', userId);
-
-            if (error) {
-                alert(`Error saving role! Error details: ${error.message}`);
-                console.error("Error saving profile:", error);
-            } else {
-                alert(`Role saved as ${newRole}.`);
-                
-                currentUserRole = newRole;
-                currentPlateNumber = null; // Reset context
-                isSharingBeacon = false;
-                updateUI(userId); 
-                toggleSidebar();
-            }
-        }
-
-        async function checkUserRole(userId) {
-            if (ADMIN_SHARER_IDS.includes(userId)) {
-                currentUserRole = 'admin';
-                console.log("User is Admin.");
-            }
-            
-            const { data, error } = await supabaseClient
-                .from('user_profiles') 
-                .select('role')
-                .eq('id', userId)
-                .single();
-
-            if (error && error.message.includes('0 rows')) { 
-                console.warn("Profile not found immediately. Assigning temporary 'viewer' role.");
-                currentUserRole = 'viewer'; 
-            } else if (error) {
-                console.error("Error fetching profile:", error);
-                currentUserRole = 'viewer'; 
-            } else {
-                currentUserRole = data.role;
-                userRoleSelect.value = data.role || '';
-            }
-
-             console.log(`User role set to: ${currentUserRole}`);
-        }
-
-        async function updateUI(userId) {
-            const session = await supabaseClient.auth.getSession();
-            const loggedIn = session.data.session !== null;
-            
-            if (loggedIn && userId) {
-                 await checkUserRole(userId); 
-            }
-
-            authContainer.style.display = loggedIn ? 'none' : 'block';
-            signupContainer.style.display = 'none';
-            signOutButton.style.display = loggedIn ? 'block' : 'none';
-            sharerControlsContainer.style.display = loggedIn ? 'block' : 'none';
-            floatingTrackingBtn.style.display = loggedIn ? 'block' : 'none';
-            onMapControls.style.display = 'none'; 
-
-            // --- Terminal Tools Visibility Check ---
-            const routeIds = allTerminals.map(t => t.route_id).filter(id => id);
-            const hasRoutes = routeIds.length > 0;
-            
-            if (currentUserRole === 'admin' || !hasRoutes) {
-                terminalToolsContainer.style.display = 'block';
-                
-                if (currentUserRole !== 'admin') {
-                    document.getElementById('terminal-submenu').style.display = 'none';
-                    document.getElementById('toggleTerminalMenuBtn').textContent = 'Stop/Station Manager (Routes Needed) ▼';
-                } else {
-                    document.getElementById('toggleTerminalMenuBtn').textContent = 'Stop/Station Manager (Admin) ▼';
-                }
-
-            } else {
-                terminalToolsContainer.style.display = 'none';
-            }
-
-
-            if (loggedIn) {
-                const isDriver = currentUserRole === 'driver';
-                const isViewer = currentUserRole === 'viewer';
-                
-                document.getElementById('role-setup-container').style.display = 'block';
-
-                if (isDriver) {
-                    await fetchDriverVehicles(userId);
-                    
-                    document.getElementById('driver-vehicle-selection').style.display = 'block';
-                    document.getElementById('vehicle-registration-collapsible').style.display = 'block'; 
-                    viewerSelectionContainer.style.display = 'none';
-                    passengerSeatReportForm.style.display = 'none';
-                    driverSeatInputGroup.style.display = 'flex'; 
-                    
-                    if (isTracking) {
-                         onMapControls.style.display = 'flex';
-                    }
-
-                    if (currentPlateNumber) {
-                        sharerRouteControl.style.display = 'flex';
-                        statusDiv.textContent = `Ready to Share: ${currentPlateNumber}. Set seats.`;
-                    } else {
-                        sharerRouteControl.style.display = 'none';
-                        statusDiv.textContent = 'Driver: Select or Register a vehicle to share.';
-                        statusDiv.style.color = '#dc3545';
-                        floatingTrackingBtn.disabled = true;
-                    }
-
-                } else if (isViewer) { 
-                    document.getElementById('driver-vehicle-selection').style.display = 'none';
-                    document.getElementById('vehicle-registration-collapsible').style.display = 'none'; 
-                    sharerRouteControl.style.display = 'none';
-                    
-                    if (isSharingBeacon) {
-                        viewerSelectionContainer.style.display = 'none';
-                        passengerSeatReportForm.style.display = 'none';
-                        statusDiv.textContent = `Sharing ON as Passenger Beacon.`;
-                        statusDiv.style.color = '#ff5722'; // Orange/Red for beacon
-                    } else {
-                         viewerSelectionContainer.style.display = 'block'; 
-                         identifyNearbyRoutes();
-                         
-                        // Check if the currentPlateNumber is set and is NOT a beacon
-                         if (currentPlateNumber && !currentPlateNumber.startsWith('user-')) {
-                            passengerSeatReportForm.style.display = 'block';
-                            statusDiv.textContent = `Viewing Plate No. ${currentPlateNumber}.`;
-                         } else {
-                            // If user was sharing beacon and stopped, currentPlateNumber is null
-                            statusDiv.textContent = 'Viewer/Passenger: Start sharing (Beacon) or select vehicle to track.';
-                            statusDiv.style.color = '#007bff';
-                         }
-                    }
-                    
-                    floatingTrackingBtn.disabled = false; // Always enabled for Viewers now
-                } else {
-                     // Default/Admin (No specific sharing controls)
-                      floatingTrackingBtn.disabled = true;
-                      floatingTrackingBtn.style.backgroundColor = '#6c757d'; 
-                      floatingTrackingBtn.textContent = '🚫';
-                }
-
-                // --- Floating Button State (Visual only) ---
-                if (isTracking) {
-                    floatingTrackingBtn.classList.remove('share-btn');
-                    floatingTrackingBtn.classList.add('stop-btn');
-                    floatingTrackingBtn.textContent = '■';
-                    floatingTrackingBtn.style.backgroundColor = '#dc3545';
-                } else if (loggedIn && (isDriver && currentPlateNumber) || isViewer) { 
-                    floatingTrackingBtn.classList.remove('stop-btn');
-                    floatingTrackingBtn.classList.add('share-btn');
-                    floatingTrackingBtn.textContent = '▶';
-                    floatingTrackingBtn.style.backgroundColor = '#28a745'; 
-                }
-
-            } else {
-                statusDiv.textContent = 'Login Required.';
-                statusDiv.style.color = '#dc3545';
-                if (intervalID) { clearInterval(intervalID); intervalID = null; }
-            }
-        }
-
-        // --- LOCATION SHARING/PINGING LOGIC ---
-        async function toggleLocationSharing() {
-            const userSession = await supabaseClient.auth.getUser();
-            const userId = userSession.data.user?.id;
-            
-            if (!currentUserRole || !userId) {
-                alert("Please log in and set your role before sharing location.");
-                return;
-            }
-            
-            if (currentUserRole === 'driver' && !currentPlateNumber) {
-                 alert("Please select a registered vehicle before sharing location.");
-                 return;
-            }
-
-            if (isTracking) {
-                stopLocationSharing();
-            } else {
-                startLocationSharing(userId);
-            }
-        }
-
-        function startLocationSharing(userId) {
-            if (!navigator.geolocation) {
-                alert('Geolocation is not supported by this browser.');
-                return;
-            }
-            
-            const isDriver = currentUserRole === 'driver';
-
-            if (isDriver) {
-                isSharingBeacon = false;
-            } else { // Viewer/Passenger Role
-                isSharingBeacon = true;
-                currentPlateNumber = `user-${userId}`; // Unique ID for passenger beacon
-                currentVehicleType = 'Passenger Beacon';
-                currentVehicleCapacity = 1; // Used for location sharing payload (occupied/empty)
-                occupiedSeats = 1; 
-                
-                // Hide viewer tracking controls when sharing beacon
-                viewerSelectionContainer.style.display = 'none';
-            }
-
-            statusDiv.textContent = `Attempting to start location sharing...`;
-            floatingTrackingBtn.disabled = true;
-
-            const options = { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 };
-            navigator.geolocation.getCurrentPosition(position => {
-                isTracking = true;
-                floatingTrackingBtn.classList.remove('share-btn');
-                floatingTrackingBtn.classList.add('stop-btn');
-                floatingTrackingBtn.textContent = '■';
-                floatingTrackingBtn.disabled = false;
-                
-                if (isDriver) {
-                    onMapControls.style.display = 'flex'; 
-                }
-                
-                updateLocationInSupabase(position); 
-
-                intervalID = setInterval(() => {
-                    // **FIX**: The missing handleGeolocationError is now defined.
-                    navigator.geolocation.getCurrentPosition(updateLocationInSupabase, handleGeolocationError, options);
-                }, PING_RATE_MS);
-            }, handleGeolocationError, options);
-            
-            updateUI(userId); // Refresh UI to reflect isTracking = true
-        }
-
-        function stopLocationSharing() {
-            isTracking = false;
-            if (intervalID) {
-                clearInterval(intervalID);
-                intervalID = null;
-            }
-            
-            // Mark the location inactive in the database
-            if (currentPlateNumber) {
-                markRouteAsInactive(currentPlateNumber); 
-                
-                // Cleanup passenger-specific state
-                if (isSharingBeacon) {
-                    currentPlateNumber = null; 
-                    isSharingBeacon = false;
-                    currentVehicleType = null;
-                    currentVehicleCapacity = null;
-                    occupiedSeats = 0;
-                    updateUI(supabaseClient.auth.getUser().data.user?.id); // Refresh UI to show viewer options
-                }
-            }
-            
-            floatingTrackingBtn.classList.remove('stop-btn');
-            floatingTrackingBtn.classList.add('share-btn');
-            floatingTrackingBtn.textContent = '▶';
-            onMapControls.style.display = 'none'; 
-            statusDiv.textContent = `Location sharing stopped.`;
-            statusDiv.style.color = '#dc3545';
-            clearDisplayedRoute();
-            
-            currentTrip = { isTrackingTrip: false, startPoint: null, lastStop: null, stopTimer: null, identifiedStartTerminal: null, identifiedEndTerminal: null };
-        }
-
-        async function markRouteAsInactive(plateOrUserId) {
-            // Note: This only marks the active_routes table entry inactive.
-            // Vehicle location data remains for history/tracking via vehicle_location table.
-            const { error } = await supabaseClient
-                .from('active_routes')
-                .update({ is_active: false })
-                .eq('plate_number', plateOrUserId); 
-            
-            if (error) console.error("Error marking route inactive:", error);
-        }
-
-        async function updateLocationInSupabase(position) {
-            const userSession = await supabaseClient.auth.getUser();
-            const userId = userSession.data.user?.id;
-            
-            if (!userId) {
-                console.error("User ID missing. Cannot share location.");
-                statusDiv.textContent = "ERROR: User ID missing. Log out and back in.";
-                statusDiv.style.color = '#dc3545';
-                stopLocationSharing();
-                return;
-            }
-            
-            const { latitude: rawLat, longitude: rawLon, speed, heading, accuracy } = position.coords;
-            const { lat, lon } = simpleSnap(rawLat, rawLon, accuracy);
-            const speedKPH = (speed || 0) * 3.6; 
-            
-            let finalHeading = 0;
-
-            // 1. Prioritize GPS heading if vehicle is moving above the slow threshold
-            if ((speed || 0) >= MIN_MOVEMENT_SPEED_MS && heading !== null) {
-                finalHeading = heading;
-            } else {
-                // 2. Fall back to device compass if available, otherwise 0
-                finalHeading = deviceOrientationHeading || 0;
-            }
-            
-            // --- Payload Construction ---
-            const isDriver = currentUserRole === 'driver';
-            let payload = {
-                plate_number: currentPlateNumber, 
-                sharer_user_id: userId,          
-                latitude: lat,
-                longitude: lon,
-                speed: speedKPH / 3.6, // Store speed in m/s as per W3C spec
-                heading: finalHeading,
-                accuracy: accuracy,
-                vehicle_type: currentVehicleType, 
-                last_updated: new Date().toISOString()
+        (function() {
+            "use strict";
+
+            const S_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
+            const S_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
+            const supabase = window.supabase.createClient(S_URL, S_KEY);
+
+            let map = null;
+            const markers = { v: {}, p: {} };
+            const schemas = {
+                user_profiles: ['id', 'full_name', 'role', 'is_active'],
+                vehicles: ['plate_number', 'vehicle_type', 'capacity', 'is_registered'],
+                active_routes: ['route_id', 'route_name', 'plate_number', 'is_active'],
+                terminals: ['name', 'route_id', 'start_lat', 'start_lon']
             };
-            
-            if (isDriver) {
-                // Driver specific fields
-                const emptySeats = currentVehicleCapacity - occupiedSeats;
-                const totalPassengers = occupiedSeats; 
-                payload.empty_seats = emptySeats;         
-                payload.total_passengers = totalPassengers; 
-            } else if (isSharingBeacon) {
-                 // Passenger Beacon specific fields (Default to 1 occupied, 0 empty)
-                payload.empty_seats = 0;         
-                payload.total_passengers = 1; 
-            } else {
-                console.error("Invalid sharing state.");
-                return;
-            }
-            
-            const { error } = await supabaseClient
-                .from('vehicle_location')
-                .upsert(payload, { on_conflict: 'plate_number' }); 
 
-            if (error) {
-                console.error("Supabase update/insert error:", error);
-                statusDiv.textContent = `ERROR: Data not shared. ${error.message.substring(0, 50)}...`;
-                statusDiv.style.color = '#dc3545';
-            } else {
-                 if (isSharingBeacon) {
-                    statusDiv.textContent = `Beacon ON. Speed: ${speedKPH.toFixed(1)} km/h.`;
-                    statusDiv.style.color = '#ff5722';
-                 } else {
-                    statusDiv.textContent = `Sharing ON. Plate: ${currentPlateNumber} | Speed: ${speedKPH.toFixed(1)} km/h | Occupied: ${occupiedSeats}`;
-                    statusDiv.style.color = getSpeedColor(speedKPH / 3.6);
-                 }
-            }
-        }
+            // --- ROLE-BASED LOGIN ---
+            window.handleLogin = async function() {
+                const email = document.getElementById('login-email').value;
+                const password = document.getElementById('login-pass').value;
+                const errEl = document.getElementById('auth-error');
+                const loading = document.getElementById('loading-overlay');
 
-        // --- NEW DRIVER SEAT CONTROL FUNCTIONS ---
-        function updateOccupiedSeats(delta) {
-            if (!isTracking || isSharingBeacon || !currentPlateNumber) return;
+                loading.style.display = 'flex';
+                errEl.style.display = 'none';
 
-            let newOccupied = occupiedSeats + delta;
+                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                
+                if (error) {
+                    loading.style.display = 'none';
+                    errEl.innerText = error.message;
+                    errEl.style.display = 'block';
+                    return;
+                }
 
-            newOccupied = Math.max(0, Math.min(newOccupied, currentVehicleCapacity));
-            
-            if (newOccupied !== occupiedSeats) {
-                occupiedSeats = newOccupied;
-                occupiedSeatsDisplay.textContent = occupiedSeats;
-            }
-        }
+                // CHECK ROLE IN user_profiles
+                const { data: profile, error: pError } = await supabase
+                    .from('user_profiles')
+                    .select('role')
+                    .eq('id', data.user.id)
+                    .single();
 
-        function submitDriverSeatUpdate() {
-            if (!isTracking || isSharingBeacon || !currentPlateNumber) {
-                alert("Location sharing must be active to update seats.");
-                return;
-            }
-            statusDiv.textContent = `Updating seat count...`;
-            navigator.geolocation.getCurrentPosition(updateLocationInSupabase, handleGeolocationError, { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 });
-        }
+                if (pError || !profile || profile.role !== 'admin') {
+                    await supabase.auth.signOut();
+                    loading.style.display = 'none';
+                    errEl.innerText = "Access Denied: You do not have an Admin role.";
+                    errEl.style.display = 'block';
+                } else {
+                    loading.style.display = 'none';
+                    // Dashboard is shown via onAuthStateChange
+                }
+            };
 
+            window.handleLogout = async function() {
+                await supabase.auth.signOut();
+                window.location.reload();
+            };
 
-        // --- MANUAL ROUTE LOGIC ---
-        function populateEndTerminalSelect(startTerminalId) {
-             endTerminalSelect.innerHTML = '<option value="">-- Select Destination Point --</option>';
-             endTerminalSelect.disabled = true;
-             
-             if (!startTerminalId) return;
+            supabase.auth.onAuthStateChange(async (event, session) => {
+                if (session) {
+                    // Double check role on refresh
+                    const { data } = await supabase.from('user_profiles').select('role').eq('id', session.user.id).single();
+                    if (data && data.role === 'admin') {
+                        document.getElementById('auth-screen').style.display = 'none';
+                        document.getElementById('sidebar').style.display = 'flex';
+                        document.getElementById('main-content').style.display = 'flex';
+                        fetchTableData('user_profiles');
+                    } else {
+                        await supabase.auth.signOut();
+                    }
+                } else {
+                    document.getElementById('auth-screen').style.display = 'flex';
+                    document.getElementById('sidebar').style.display = 'none';
+                    document.getElementById('main-content').style.display = 'none';
+                }
+            });
 
-             const selectedStartTerminal = allTerminals.find(t => t.id == startTerminalId);
-             if (!selectedStartTerminal || !selectedStartTerminal.route_id) return;
+            // --- SYSTEM LOGIC ---
+            window.switchView = function(tableName, el) {
+                document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+                el.classList.add('active');
+                const tableSec = document.getElementById('view-table');
+                const liveSec = document.getElementById('view-live');
 
-             endTerminalSelect.disabled = false;
-             allTerminals
-                .filter(t => t.route_id === selectedStartTerminal.route_id && t.id != startTerminalId)
-                .forEach(terminal => {
-                    const option = document.createElement('option');
-                    option.value = terminal.id;
-                    option.textContent = terminal.name;
-                    endTerminalSelect.appendChild(option);
-                });
-        }
-        
-        async function drawManualRoute() {
-            if (!currentPlateNumber) {
-                alert("Please select a vehicle before setting a route.");
-                return;
-            }
-            
-            if (isSharingBeacon) {
-                alert("Cannot set a route while sharing as a Passenger Beacon.");
-                return;
-            }
+                if (tableName === 'live') {
+                    tableSec.classList.remove('active');
+                    liveSec.classList.add('active');
+                    initMap();
+                } else {
+                    liveSec.classList.remove('active');
+                    tableSec.classList.add('active');
+                    fetchTableData(tableName);
+                }
+                document.getElementById('view-title').innerText = tableName.toUpperCase();
+            };
 
-            const startId = startTerminalSelect.value;
-            const endId = endTerminalSelect.value;
-
-            if (!startId || !endId) {
-                alert("Please select both a starting and a destination point.");
-                return;
+            async function fetchTableData(tableName) {
+                const { data, error } = await supabase.from(tableName).select('*');
+                if (error) return;
+                const cols = schemas[tableName];
+                document.getElementById('table-head').innerHTML = `<tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>`;
+                document.getElementById('table-body').innerHTML = data.map(row => `
+                    <tr>${cols.map(c => `<td>${row[c] !== null ? row[c] : '--'}</td>`).join('')}</tr>
+                `).join('');
             }
 
-            const startTerminal = allTerminals.find(t => t.id == startId);
-            const endTerminal = allTerminals.find(t => t.id == endId);
-
-            if (!navigator.geolocation) {
-                alert('Cannot draw route without current GPS location.');
-                return;
+            function initMap() {
+                if (map) return;
+                map = L.map('admin-map').setView([14.5995, 120.9842], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+                supabase.channel('admin-live')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_location' }, p => updateLive(p.new, 'v'))
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'passenger_location' }, p => updateLive(p.new, 'p'))
+                    .subscribe();
             }
-            navigator.geolocation.getCurrentPosition(async (position) => {
-                 const currentLat = position.coords.latitude;
-                 const currentLon = position.coords.longitude;
-                 
-                 await fetchAndDisplayRoute(startTerminal, endTerminal, currentLat, currentLon);
 
-                 const { error } = await supabaseClient
-                    .from('active_routes')
-                    .upsert({
-                        plate_number: currentPlateNumber,
-                        tracking_id: currentPlateNumber, 
-                        route_id: startTerminal.route_id,
-                        is_active: true,
-                        start_lat: startTerminal.latitude,
-                        start_lon: startTerminal.longitude,
-                        end_lat: endTerminal.latitude,
-                        end_lon: endTerminal.longitude,
-                        start_name: startTerminal.name,
-                        end_name: endTerminal.name
-                    }, { on_conflict: 'plate_number' }); 
-                 
-                 if (error) console.error("Error saving active route:", error);
-
-                 statusDiv.textContent = `Route set from ${startTerminal.name} to ${endTerminal.name}.`;
-                 statusDiv.style.color = '#007bff';
-                 toggleSidebar();
-
-            }, (err) => {
-                alert(`Could not get GPS location for route drawing: ${err.message}`);
-            }, { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 });
-
-        }
-
-        // --- EVENT LISTENERS ---
-        floatingTrackingBtn.addEventListener('click', toggleLocationSharing);
-        loginButton.addEventListener('click', handleLogin);
-        signOutButton.addEventListener('click', handleSignOut);
-        signupButton.addEventListener('click', handleSignUp);
-        
-        // ROLE SETUP LISTENERS
-        saveRoleButton.addEventListener('click', saveUserRoleSetup);
-        
-        // VEHICLE MANAGEMENT LISTENERS
-        registerVehicleBtn.addEventListener('click', registerNewVehicle);
-        selectVehicleToShareBtn.addEventListener('click', setVehicleForSharing);
-        
-        // DRIVER SEAT CONTROL LISTENERS
-        minusSeatBtn.addEventListener('click', () => updateOccupiedSeats(-1));
-        plusSeatBtn.addEventListener('click', () => updateOccupiedSeats(1));
-        submitSeatUpdateBtn.addEventListener('click', submitDriverSeatUpdate);
-
-        // COLLAPSIBLE REGISTRATION LISTENER
-        toggleRegistrationBtn.addEventListener('click', () => {
-            const isVisible = vehicleRegistrationContainer.style.display !== 'none';
-            vehicleRegistrationContainer.style.display = isVisible ? 'none' : 'block';
-            toggleRegistrationBtn.textContent = isVisible ? 'Register New Vehicle ▼' : 'Register New Vehicle ▲';
-        });
-
-        // TERMINAL MANAGEMENT LISTENERS
-        document.getElementById('dropPinButton').addEventListener('click', togglePinningMode);
-        document.getElementById('savePinButton').addEventListener('click', savePinnedTerminal);
-        document.getElementById('captureGPSButton').addEventListener('click', captureAndSaveTerminal);
-        document.getElementById('toggleTerminalMenuBtn').addEventListener('click', () => {
-             document.getElementById('terminal-submenu').style.display = document.getElementById('terminal-submenu').style.display === 'none' ? 'flex' : 'none';
-        });
-
-        // Toggle between login and signup forms
-        showSignupLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            authContainer.style.display = 'none';
-            signupContainer.style.display = 'block';
-            loginErrorMessageDiv.textContent = '';
-        });
-        showLoginLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            authContainer.style.display = 'block';
-            signupContainer.style.display = 'none';
-        });
-
-        // Manual Route Controls
-        startTerminalSelect.addEventListener('change', (e) => {
-            populateEndTerminalSelect(e.target.value);
-        });
-        drawManualRouteButton.addEventListener('click', drawManualRoute);
-        clearManualRouteButton.addEventListener('click', () => {
-             clearDisplayedRoute();
-             if (currentPlateNumber) {
-                 markRouteAsInactive(currentPlateNumber);
-             }
-             statusDiv.textContent = `Manual route cleared.`;
-             statusDiv.style.color = '#dc3545';
-        });
-
-        // Passenger/Viewer Controls
-        routeToTrackSelect.addEventListener('change', (e) => {
-            fetchVehiclesOnRoute(e.target.value);
-        });
-        setVehicleButton.addEventListener('click', setVehicleAsBeacon);
-        
-        // PASSENGER SEAT REPORT LISTENER
-        submitSeatReportBtn.addEventListener('click', submitSeatReport);
-
-        // Initial check on page load
-        supabaseClient.auth.getSession().then(({ data: { session } }) => {
-            if (session) {
-                updateUI(session.user.id);
-            } else {
-                updateUI(null);
+            function updateLive(data, type) {
+                if (!data || !data.latitude || !data.longitude) return;
+                const id = type === 'v' ? data.plate_number : data.user_id;
+                const color = type === 'v' ? '#10b981' : '#3b82f6';
+                if (markers[type][id]) {
+                    markers[type][id].setLatLng([data.latitude, data.longitude]);
+                } else {
+                    markers[type][id] = L.circleMarker([data.latitude, data.longitude], { color, radius: 7, fillOpacity: 0.8 }).addTo(map);
+                }
             }
-        });
+        })();
     </script>
 </body>
 </html>
