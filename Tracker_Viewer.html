@@ -21,9 +21,9 @@
         .nav-btn { padding: 12px; cursor: pointer; border-radius: 6px; margin-bottom: 5px; font-size: 0.85rem; }
         .nav-btn.active { background: var(--accent); }
 
-        .main { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+        .main { flex: 1; display: none; flex-direction: column; overflow: hidden; position: relative; }
         .header { background: white; padding: 15px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
-        .view-container { padding: 20px; overflow-y: auto; flex: 1; }
+        .view-container { padding: 20px; overflow-y: auto; flex: 1; padding-bottom: 60px; }
         
         #admin-map { height: calc(100vh - 120px); width: 100%; border-radius: 8px; background: #f1f5f9; }
         table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; }
@@ -33,7 +33,10 @@
         #modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:2000; align-items:center; justify-content:center; }
         .modal-content { background:white; padding:25px; border-radius:12px; width:380px; max-height: 90vh; overflow-y: auto; }
 
-        #add-btn { position:fixed; bottom:30px; right:30px; width:60px; height:60px; border-radius:50%; background:var(--accent); color:white; border:none; font-size:30px; cursor:pointer; box-shadow:0 10px 15px rgba(59,130,246,0.4); z-index:1000; display:none; }
+        #add-btn { position:fixed; bottom:80px; right:30px; width:60px; height:60px; border-radius:50%; background:var(--accent); color:white; border:none; font-size:30px; cursor:pointer; box-shadow:0 10px 15px rgba(59,130,246,0.4); z-index:1000; display:none; }
+
+        /* Footer Tracker */
+        footer { position: absolute; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #e2e8f0; padding: 8px 20px; font-size: 0.7rem; color: #94a3b8; display: flex; justify-content: space-between; align-items: center; z-index: 10; }
     </style>
 </head>
 <body>
@@ -79,6 +82,10 @@
             </div>
             <div id="view-live" style="display:none;"><div id="admin-map"></div></div>
         </div>
+        <footer>
+            <span>Alpha v0.001 | PubVehicleTracker Build</span>
+            <span>Last Update: 2025-12-26 | Git Ref: Admin-Session-Fix</span>
+        </footer>
     </div>
 
     <button id="add-btn" onclick="window.openModal()">+</button>
@@ -92,10 +99,9 @@
 
         mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
         
-        let map = null, currentTable = 'user_profiles';
+        let map = null, currentTable = 'user_profiles', initialLoad = true;
         let markers = { v: {} };
 
-        // UPDATED SCHEMAS: Included end_lat and end_lon for terminals
         const schemas = {
             user_profiles: ['id', 'full_name', 'role'],
             terminals: ['id', 'name', 'start_lat', 'start_lon', 'end_lat', 'end_lon'],
@@ -118,7 +124,14 @@
                 document.getElementById('auth-screen').style.display = 'none';
                 document.getElementById('sidebar').style.display = 'flex';
                 document.getElementById('main-content').style.display = 'flex';
-                window.switchView('user_profiles', document.querySelector('.nav-btn'));
+                
+                // FIXED: Only trigger default view on the very first load
+                if (initialLoad) {
+                    window.switchView('user_profiles', document.querySelector('.nav-btn'));
+                    initialLoad = false;
+                }
+            } else {
+                document.getElementById('auth-screen').style.display = 'flex';
             }
         });
 
@@ -149,17 +162,14 @@
         window.openModal = () => {
             const fields = document.getElementById('form-fields');
             fields.innerHTML = '';
-            
             schemas[currentTable].forEach(col => {
                 const label = document.createElement('label');
                 label.innerText = col.replace('_', ' ').toUpperCase();
                 label.style.cssText = "font-size: 0.7rem; color: #64748b; font-weight: bold;";
-                
                 const input = document.createElement('input');
                 input.name = col;
                 input.placeholder = `Enter ${col.replace('_', ' ')}`;
                 input.style.cssText = "width:100%; padding:10px; margin: 5px 0 12px 0; border:1px solid #ddd; border-radius:4px; box-sizing: border-box;";
-                
                 fields.appendChild(label);
                 fields.appendChild(input);
             });
@@ -177,29 +187,21 @@
             else { window.closeModal(); fetchTableData(currentTable); }
         };
 
-        // --- MAP LOGIC ---
         async function initMap() {
             if (map) return;
             map = new mapboxgl.Map({ container: 'admin-map', style: 'mapbox://styles/mapbox/streets-v12', center: [120.9842, 14.5995], zoom: 11 });
-            
             const { data: terminals } = await client.from('terminals').select('*');
             terminals?.forEach(t => {
-                // START MARKER
                 const elStart = document.createElement('div');
                 elStart.style.cssText = "width:14px; height:14px; background:#1e293b; border:2px solid white; border-radius:2px;";
                 new mapboxgl.Marker(elStart).setLngLat([t.start_lon, t.start_lat]).setPopup(new mapboxgl.Popup().setHTML(`<b>Terminal Start: ${t.name}</b>`)).addTo(map);
-
-                // END MARKER
                 if (t.end_lon && t.end_lat) {
                     const elEnd = document.createElement('div');
                     elEnd.style.cssText = "width:14px; height:14px; background:#ef4444; border:2px solid white; border-radius:2px;";
                     new mapboxgl.Marker(elEnd).setLngLat([t.end_lon, t.end_lat]).setPopup(new mapboxgl.Popup().setHTML(`<b>Terminal End: ${t.name}</b>`)).addTo(map);
                 }
             });
-
-            client.channel('realtime-map')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_location' }, p => updateVehicle(p.new))
-                .subscribe();
+            client.channel('realtime-map').on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_location' }, p => updateVehicle(p.new)).subscribe();
         }
 
         function updateVehicle(data) {
@@ -215,4 +217,3 @@
     </script>
 </body>
 </html>
-
