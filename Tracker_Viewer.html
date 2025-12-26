@@ -31,11 +31,16 @@
         td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 0.8rem; }
         
         #modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:2000; align-items:center; justify-content:center; }
-        .modal-content { background:white; padding:25px; border-radius:12px; width:380px; max-height: 90vh; overflow-y: auto; }
+        .modal-content { background:white; padding:25px; border-radius:12px; width:450px; max-height: 90vh; overflow-y: auto; }
 
         #add-btn { position:fixed; bottom:80px; right:30px; width:60px; height:60px; border-radius:50%; background:var(--accent); color:white; border:none; font-size:30px; cursor:pointer; box-shadow:0 10px 15px rgba(59,130,246,0.4); z-index:1000; display:none; }
 
         footer { position: absolute; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #e2e8f0; padding: 8px 20px; font-size: 0.7rem; color: #94a3b8; display: flex; justify-content: space-between; align-items: center; z-index: 10; }
+        
+        /* Picker UI */
+        .picker-btn { background: #f1f5f9; border: 1px solid #cbd5e1; padding: 5px 10px; border-radius: 4px; font-size: 0.65rem; cursor: pointer; margin-left: 10px; }
+        .picker-btn:hover { background: #e2e8f0; }
+        #mini-map-container { display: none; height: 250px; width: 100%; margin: 10px 0; border-radius: 6px; border: 1px solid #ddd; position: relative; }
     </style>
 </head>
 <body>
@@ -46,7 +51,6 @@
             <input type="email" id="login-email" placeholder="Email">
             <input type="password" id="login-pass" placeholder="Password">
             <button onclick="window.handleLogin()">Login</button>
-            <p id="auth-error" style="color: var(--danger); font-size: 0.75rem; margin-top: 10px; display: none;"></p>
         </div>
     </div>
 
@@ -55,6 +59,10 @@
             <h2 id="modal-title" style="margin:0 0 15px 0; font-size: 1.1rem;">New Record</h2>
             <form id="entry-form">
                 <div id="form-fields"></div>
+                <div id="mini-map-container">
+                    <div id="mini-map" style="height: 100%; width:100%;"></div>
+                    <div style="position:absolute; bottom:10px; left:10px; background:white; padding:5px; font-size:0.6rem; border-radius:3px; box-shadow:0 2px 4px rgba(0,0,0,0.2);">Click map to set point</div>
+                </div>
                 <button type="submit" style="width:100%; padding:12px; background:var(--accent); color:white; border:none; border-radius:6px; margin-top:10px; font-weight: bold;">Save Entry</button>
                 <button type="button" onclick="window.closeModal()" style="width:100%; padding:12px; background:#f1f5f9; border:none; border-radius:6px; margin-top:5px;">Cancel</button>
             </form>
@@ -72,18 +80,14 @@
     </div>
 
     <div class="main" id="main-content">
-        <div class="header">
-            <h1 id="view-title" style="margin:0; font-size: 1.1rem;">USER ACCESS</h1>
-        </div>
+        <div class="header"><h1 id="view-title" style="margin:0; font-size: 1.1rem;">USER ACCESS</h1></div>
         <div class="view-container">
-            <div id="view-table">
-                <table><thead id="table-head"></thead><tbody id="table-body"></tbody></table>
-            </div>
+            <div id="view-table"><table><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div>
             <div id="view-live" style="display:none;"><div id="admin-map"></div></div>
         </div>
         <footer>
-            <span>Alpha v0.003 | PubVehicleTracker Build</span>
-            <span>Last Update: 2025-12-26 | Git Ref: Fix-Label-Swap</span>
+            <span>Alpha v0.004 | PubVehicleTracker Build</span>
+            <span>Last Update: 2025-12-26 | Git Ref: Hybrid-Map-Picker</span>
         </footer>
     </div>
 
@@ -91,15 +95,13 @@
 
     <script type="module">
         import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
-
         const S_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
         const S_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
         const client = createClient(S_URL, S_KEY);
-
         mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
         
-        let map = null, currentTable = 'user_profiles', initialLoad = true;
-        let markers = { v: {} };
+        let map = null, miniMap = null, currentTable = 'user_profiles', initialLoad = true, pickerTarget = null;
+        let markers = { v: {} }, miniMarker = null;
 
         const schemas = {
             user_profiles: ['id', 'full_name', 'role'],
@@ -123,26 +125,19 @@
                 document.getElementById('auth-screen').style.display = 'none';
                 document.getElementById('sidebar').style.display = 'flex';
                 document.getElementById('main-content').style.display = 'flex';
-                if (initialLoad) {
-                    window.switchView('user_profiles', document.querySelector('.nav-btn'));
-                    initialLoad = false;
-                }
-            } else {
-                document.getElementById('auth-screen').style.display = 'flex';
-            }
+                if (initialLoad) { window.switchView('user_profiles', document.querySelector('.nav-btn')); initialLoad = false; }
+            } else { document.getElementById('auth-screen').style.display = 'flex'; }
         });
 
         window.switchView = (tableName, el) => {
             currentTable = tableName;
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             el.classList.add('active');
-            
             const isMap = tableName === 'live';
             document.getElementById('view-table').style.display = isMap ? 'none' : 'block';
             document.getElementById('view-live').style.display = isMap ? 'block' : 'none';
             document.getElementById('add-btn').style.display = (isMap || tableName === 'user_profiles') ? 'none' : 'block';
             document.getElementById('view-title').innerText = tableName.toUpperCase().replace('_',' ');
-
             if (isMap) initMap(); else fetchTableData(tableName);
         };
 
@@ -159,21 +154,66 @@
         window.openModal = () => {
             const fields = document.getElementById('form-fields');
             fields.innerHTML = '';
+            document.getElementById('mini-map-container').style.display = 'none';
+
             schemas[currentTable].forEach(col => {
+                const row = document.createElement('div');
+                row.style.marginBottom = "10px";
+                
+                const labelContainer = document.createElement('div');
+                labelContainer.style.display = "flex";
+                labelContainer.style.justifyContent = "space-between";
+                
                 const label = document.createElement('label');
                 label.innerText = col.replace('_', ' ').toUpperCase();
                 label.style.cssText = "font-size: 0.7rem; color: #64748b; font-weight: bold;";
+                labelContainer.appendChild(label);
+
+                // Add picker button for lat/lon fields
+                if (currentTable === 'terminals' && (col.includes('lat') || col.includes('lon'))) {
+                    const type = col.startsWith('start') ? 'start' : 'end';
+                    const picker = document.createElement('span');
+                    picker.className = 'picker-btn';
+                    picker.innerText = "📍 Pick on Map";
+                    picker.onclick = () => initPicker(type);
+                    labelContainer.appendChild(picker);
+                }
+
                 const input = document.createElement('input');
                 input.name = col;
+                input.id = `input-${col}`;
                 input.placeholder = `Enter ${col.replace('_', ' ')}`;
-                input.style.cssText = "width:100%; padding:10px; margin: 5px 0 12px 0; border:1px solid #ddd; border-radius:4px; box-sizing: border-box;";
-                fields.appendChild(label);
-                fields.appendChild(input);
+                input.style.cssText = "width:100%; padding:10px; margin-top: 5px; border:1px solid #ddd; border-radius:4px; box-sizing: border-box;";
+                
+                row.appendChild(labelContainer);
+                row.appendChild(input);
+                fields.appendChild(row);
             });
             document.getElementById('modal-overlay').style.display = 'flex';
         };
 
-        window.closeModal = () => document.getElementById('modal-overlay').style.display = 'none';
+        function initPicker(type) {
+            pickerTarget = type;
+            document.getElementById('mini-map-container').style.display = 'block';
+            if (!miniMap) {
+                miniMap = new mapboxgl.Map({ container: 'mini-map', style: 'mapbox://styles/mapbox/streets-v12', center: [120.9842, 14.5995], zoom: 12 });
+                miniMap.on('click', (e) => {
+                    const { lng, lat } = e.lngLat;
+                    document.getElementById(`input-${pickerTarget}_lat`).value = lat.toFixed(6);
+                    document.getElementById(`input-${pickerTarget}_lon`).value = lng.toFixed(6);
+                    if (miniMarker) miniMarker.remove();
+                    miniMarker = new mapboxgl.Marker({color: pickerTarget === 'start' ? '#1e293b' : '#ef4444'}).setLngLat([lng, lat]).addTo(miniMap);
+                });
+            } else {
+                miniMap.resize();
+            }
+        }
+
+        window.closeModal = () => {
+            document.getElementById('modal-overlay').style.display = 'none';
+            if (miniMarker) miniMarker.remove();
+            miniMarker = null;
+        };
 
         document.getElementById('entry-form').onsubmit = async (e) => {
             e.preventDefault();
@@ -189,42 +229,26 @@
             map = new mapboxgl.Map({ container: 'admin-map', style: 'mapbox://styles/mapbox/streets-v12', center: [120.9842, 14.5995], zoom: 11 });
             const { data: terminals } = await client.from('terminals').select('*');
             terminals?.forEach(t => {
-                // START REFERENCE
-                const startCoords = [parseFloat(t.start_lon), parseFloat(t.start_lat)];
-                const endCoords = [parseFloat(t.end_lon), parseFloat(t.end_lat)];
-
-                // Start Marker (Dark Blue) -> Correctly Labeled "Start"
-                const elStart = document.createElement('div');
-                elStart.style.cssText = "width:14px; height:14px; background:#1e293b; border:2px solid white; border-radius:2px;";
-                new mapboxgl.Marker(elStart)
-                    .setLngLat(startCoords)
-                    .setPopup(new mapboxgl.Popup().setHTML(`<b>START: ${t.name}</b><br>ID: ${t.id}`))
-                    .addTo(map);
-
-                // End Marker (Red) -> Correctly Labeled "End"
-                if (t.end_lon && t.end_lat) {
-                    const elEnd = document.createElement('div');
-                    elEnd.style.cssText = "width:14px; height:14px; background:#ef4444; border:2px solid white; border-radius:2px;";
-                    new mapboxgl.Marker(elEnd)
-                        .setLngLat(endCoords)
-                        .setPopup(new mapboxgl.Popup().setHTML(`<b>END: ${t.name}</b><br>ID: ${t.id}`))
-                        .addTo(map);
-                }
+                const start = [parseFloat(t.start_lon), parseFloat(t.start_lat)];
+                const end = [parseFloat(t.end_lon), parseFloat(t.end_lat)];
+                new mapboxgl.Marker(markerEl('#1e293b')).setLngLat(start).setPopup(new mapboxgl.Popup().setHTML(`<b>START: ${t.name}</b>`)).addTo(map);
+                if (t.end_lon) new mapboxgl.Marker(markerEl('#ef4444')).setLngLat(end).setPopup(new mapboxgl.Popup().setHTML(`<b>END: ${t.name}</b>`)).addTo(map);
             });
+            client.channel('realtime-map').on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_location' }, p => updateVehicle(p.new)).subscribe();
+        }
 
-            client.channel('realtime-map')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_location' }, p => updateVehicle(p.new))
-                .subscribe();
+        function markerEl(color) {
+            const el = document.createElement('div');
+            el.style.cssText = `width:14px; height:14px; background:${color}; border:2px solid white; border-radius:2px;`;
+            return el;
         }
 
         function updateVehicle(data) {
-            if (!data.plate_number || !data.longitude || !data.latitude) return;
+            if (!data.plate_number) return;
             const coords = [parseFloat(data.longitude), parseFloat(data.latitude)];
-            if (markers.v[data.plate_number]) {
-                markers.v[data.plate_number].setLngLat(coords);
-            } else {
-                const el = document.createElement('div');
-                el.style.cssText = "width:12px; height:12px; background:#10b981; border-radius:50%; border:2px solid white;";
+            if (markers.v[data.plate_number]) markers.v[data.plate_number].setLngLat(coords);
+            else {
+                const el = document.createElement('div'); el.style.cssText = "width:12px; height:12px; background:#10b981; border-radius:50%; border:2px solid white;";
                 markers.v[data.plate_number] = new mapboxgl.Marker(el).setLngLat(coords).addTo(map);
             }
         }
