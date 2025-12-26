@@ -12,26 +12,29 @@
         :root { --sidebar: #0f172a; --bg: #f8fafc; --accent: #3b82f6; --danger: #ef4444; }
         body { margin: 0; display: flex; height: 100vh; font-family: 'Inter', sans-serif; background: var(--bg); overflow: hidden; }
         
+        /* Auth Screen */
         #auth-screen { position: fixed; inset: 0; background: var(--sidebar); z-index: 999; display: flex; align-items: center; justify-content: center; }
-        .auth-card { background: white; padding: 40px; border-radius: 12px; width: 350px; text-align: center; }
+        .auth-card { background: white; padding: 40px; border-radius: 12px; width: 350px; text-align: center; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
         .auth-card input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; }
         .auth-card button { width: 100%; padding: 12px; background: var(--accent); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
 
+        /* Dashboard Layout */
         .sidebar { width: 280px; background: var(--sidebar); color: white; display: none; flex-direction: column; padding: 20px; }
-        .nav-btn { padding: 12px; cursor: pointer; border-radius: 6px; margin-bottom: 5px; font-size: 0.85rem; transition: 0.2s; }
-        .nav-btn:hover { background: rgba(255,255,255,0.1); }
+        .nav-btn { padding: 12px; cursor: pointer; border-radius: 6px; margin-bottom: 5px; font-size: 0.85rem; }
         .nav-btn.active { background: var(--accent); }
 
         .main { flex: 1; display: none; flex-direction: column; overflow: hidden; }
-        .header { background: white; padding: 15px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; }
+        .header { background: white; padding: 15px 30px; border-bottom: 1px solid #e2e8f0; }
         .view-container { padding: 20px; overflow-y: auto; flex: 1; }
         .section { display: none; }
         .section.active { display: block; }
 
-        #admin-map { height: calc(100vh - 120px); width: 100%; border-radius: 8px; background: #e5e7eb; }
-        table { width: 100%; border-collapse: collapse; background: white; }
+        #admin-map { height: calc(100vh - 120px); width: 100%; border-radius: 8px; background: #f1f5f9; }
+        
+        /* Table Styling */
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
         th { text-align: left; padding: 12px; background: #f8fafc; font-size: 0.75rem; color: #64748b; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; }
-        td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 0.85rem; }
+        td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 0.85rem; color: #1e293b; }
         .empty-msg { padding: 40px; text-align: center; color: #94a3b8; font-style: italic; }
     </style>
 </head>
@@ -39,32 +42,35 @@
 
     <div id="auth-screen">
         <div class="auth-card">
-            <h1>Admin Login</h1>
-            <input type="email" id="login-email" placeholder="Email">
+            <h1 style="margin-top:0;">Admin Login</h1>
+            <p style="font-size: 0.8rem; color: #64748b;">Authorized Personnel Only</p>
+            <input type="email" id="login-email" placeholder="Admin Email">
             <input type="password" id="login-pass" placeholder="Password">
-            <button onclick="window.handleLogin()">Sign In</button>
+            <button onclick="window.handleLogin()">Enter Dashboard</button>
             <p id="auth-error" style="color: var(--danger); font-size: 0.75rem; margin-top: 10px; display: none;"></p>
         </div>
     </div>
 
     <div class="sidebar" id="sidebar">
-        <h2 style="color: var(--accent); font-size: 1rem; margin-bottom: 25px;">MASTER CONSOLE</h2>
-        <div class="nav-btn active" onclick="window.switchView('user_profiles', this)">Users</div>
-        <div class="nav-btn" onclick="window.switchView('vehicles', this)">Fleet</div>
-        <div class="nav-btn" onclick="window.switchView('active_routes', this)">Routes</div>
-        <div class="nav-btn" onclick="window.switchView('terminals', this)">Terminals</div>
-        <div class="nav-btn" onclick="window.switchView('live', this)" style="margin-top:20px; border: 1px solid #334155;">🛰️ LIVE MAP</div>
-        <button onclick="window.handleLogout()" style="margin-top: auto; padding: 10px; background: #334155; color: white; border: none; border-radius: 6px; cursor: pointer;">Logout</button>
+        <h2 style="color: var(--accent); font-size: 0.9rem; letter-spacing: 1px; margin-bottom: 25px;">MASTER CONTROL</h2>
+        <div class="nav-btn active" onclick="window.switchView('user_profiles', this)">User Management</div>
+        <div class="nav-btn" onclick="window.switchView('vehicles', this)">Fleet Registry</div>
+        <div class="nav-btn" onclick="window.switchView('active_routes', this)">Route Dispatch</div>
+        <div class="nav-btn" onclick="window.switchView('terminals', this)">Terminal Nodes</div>
+        <div class="nav-btn" onclick="window.switchView('live', this)" style="margin-top:20px; border: 1px solid #334155; text-align: center;">🛰️ Live Map</div>
+        <button onclick="window.handleLogout()" style="margin-top: auto; padding: 10px; background: #1e293b; color: white; border: 1px solid #334155; border-radius: 6px; cursor: pointer;">Sign Out</button>
     </div>
 
     <div class="main" id="main-content">
         <div class="header">
-            <h1 id="view-title" style="margin:0; font-size: 1.1rem;">USER PROFILES</h1>
-            <div id="map-status" style="font-size: 0.75rem; color: #94a3b8; display: none;">Mapbox Active</div>
+            <h1 id="view-title" style="margin:0; font-size: 1.1rem; color: #0f172a;">USER PROFILES</h1>
         </div>
         <div class="view-container">
             <div id="view-table" class="section active">
-                <table><thead id="table-head"></thead><tbody id="table-body"></tbody></table>
+                <table>
+                    <thead id="table-head"></thead>
+                    <tbody id="table-body"></tbody>
+                </table>
             </div>
             <div id="view-live" class="section">
                 <div id="admin-map"></div>
@@ -75,14 +81,14 @@
     <script type="module">
         import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 
+        // DATABASE CONFIG
         const S_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
         const S_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
         const client = createClient(S_URL, S_KEY);
 
-        // REPLACE THE TOKEN BELOW WITH YOUR WORKING MAPBOX TOKEN
-        const MAPBOX_TOKEN = 'pk.eyJ1Ijoiam9uYXRoYW5leSIsImEiOiJjbTZueXh3ZzAwNXBpMmpxeHh6Ym96Ym9pIn0.hR_YtT794E767YV6y72zGg';
-        mapboxgl.accessToken = MAPBOX_TOKEN;
-
+        // MAPBOX CONFIG - Using your verified token
+        mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
+        
         let map = null;
         const markers = { v: {}, p: {} };
         const schemas = {
@@ -92,21 +98,24 @@
             terminals: ['name', 'route_id', 'start_lat', 'start_lon']
         };
 
+        // --- AUTH LOGIC ---
         window.handleLogin = async function() {
             const email = document.getElementById('login-email').value;
             const password = document.getElementById('login-pass').value;
+            const errEl = document.getElementById('auth-error');
+            
             try {
                 const { data, error } = await client.auth.signInWithPassword({ email, password });
                 if (error) throw error;
-                const { data: p } = await client.from('user_profiles').select('role').eq('id', data.user.id).single();
-                if (!p || p.role !== 'admin') {
+
+                const { data: p, error: pError } = await client.from('user_profiles').select('role').eq('id', data.user.id).single();
+                if (pError || !p || p.role !== 'admin') {
                     await client.auth.signOut();
-                    throw new Error("Admin access required.");
+                    throw new Error("Access Denied: Admin Role Required.");
                 }
             } catch (e) {
-                const err = document.getElementById('auth-error');
-                err.innerText = e.message;
-                err.style.display = 'block';
+                errEl.innerText = e.message;
+                errEl.style.display = 'block';
             }
         };
 
@@ -123,6 +132,7 @@
             }
         });
 
+        // --- NAVIGATION & DATA ---
         window.switchView = function(tableName, el) {
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             el.classList.add('active');
@@ -133,12 +143,10 @@
             if (tableName === 'live') {
                 tableSec.classList.remove('active');
                 liveSec.classList.add('active');
-                document.getElementById('map-status').style.display = 'block';
                 initMap();
             } else {
                 liveSec.classList.remove('active');
                 tableSec.classList.add('active');
-                document.getElementById('map-status').style.display = 'none';
                 fetchTableData(tableName);
             }
             document.getElementById('view-title').innerText = tableName.toUpperCase().replace('_', ' ');
@@ -150,10 +158,10 @@
             const cols = schemas[tableName];
             
             head.innerHTML = `<tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>`;
-            const { data, error } = await client.from(tableName).select('*');
+            const { data } = await client.from(tableName).select('*');
 
-            if (error || !data || data.length === 0) {
-                body.innerHTML = `<tr><td colspan="${cols.length}" class="empty-msg">Table "${tableName}" is currently empty.</td></tr>`;
+            if (!data || data.length === 0) {
+                body.innerHTML = `<tr><td colspan="${cols.length}" class="empty-msg">No entries found in ${tableName}.</td></tr>`;
                 return;
             }
 
@@ -162,33 +170,27 @@
             `).join('');
         }
 
+        // --- MAPBOX LOGIC ---
         function initMap() {
             if (map) return;
-            try {
-                map = new mapboxgl.Map({
-                    container: 'admin-map',
-                    style: 'mapbox://styles/mapbox/streets-v12',
-                    center: [120.9842, 14.5995],
-                    zoom: 11
-                });
+            map = new mapboxgl.Map({
+                container: 'admin-map',
+                style: 'mapbox://styles/mapbox/streets-v12',
+                center: [121.05, 14.58], // Metro Manila Area
+                zoom: 11
+            });
 
-                map.on('error', (e) => {
-                    if (e.error.status === 401) {
-                        alert("Mapbox Token Invalid. Please check your Access Token in the code.");
-                    }
-                });
+            map.addControl(new mapboxgl.NavigationControl());
 
-                client.channel('realtime-admin')
-                    .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_location' }, p => updateMarker(p.new, 'v'))
-                    .on('postgres_changes', { event: '*', schema: 'public', table: 'passenger_location' }, p => updateMarker(p.new, 'p'))
-                    .subscribe();
-            } catch (err) {
-                console.error("Mapbox failed to load:", err);
-            }
+            // Listen for Real-time Location Updates
+            client.channel('admin-tracking')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_location' }, p => updateMarker(p.new, 'v'))
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'passenger_location' }, p => updateMarker(p.new, 'p'))
+                .subscribe();
         }
 
         function updateMarker(data, type) {
-            if (!data || !data.latitude || !data.longitude || !map) return;
+            if (!data || !data.latitude || !data.longitude) return;
             const id = type === 'v' ? data.plate_number : data.user_id;
             const color = type === 'v' ? '#10b981' : '#3b82f6';
 
@@ -196,15 +198,12 @@
                 markers[type][id].setLngLat([data.longitude, data.latitude]);
             } else {
                 const el = document.createElement('div');
-                el.style.width = '14px';
-                el.style.height = '14px';
-                el.style.backgroundColor = color;
-                el.style.borderRadius = '50%';
-                el.style.border = '2px solid white';
-                el.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
+                el.className = 'marker';
+                el.style.cssText = `width:12px; height:12px; background:${color}; border-radius:50%; border:2px solid white; box-shadow:0 0 5px rgba(0,0,0,0.5);`;
 
                 markers[type][id] = new mapboxgl.Marker(el)
                     .setLngLat([data.longitude, data.latitude])
+                    .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(`<b>${type === 'v' ? 'Vehicle' : 'User'}</b><br>${id}`))
                     .addTo(map);
             }
         }
