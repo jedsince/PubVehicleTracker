@@ -18,15 +18,17 @@
         .auth-card button { width: 100%; padding: 12px; background: var(--accent); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
 
         .sidebar { width: 280px; background: var(--sidebar); color: white; display: none; flex-direction: column; padding: 20px; }
-        .nav-btn { padding: 12px; cursor: pointer; border-radius: 6px; margin-bottom: 5px; font-size: 0.85rem; }
+        .nav-btn { padding: 12px; cursor: pointer; border-radius: 6px; margin-bottom: 5px; font-size: 0.85rem; transition: 0.2s; }
+        .nav-btn:hover { background: rgba(255,255,255,0.1); }
         .nav-btn.active { background: var(--accent); }
 
         .main { flex: 1; display: none; flex-direction: column; overflow: hidden; }
+        .header { background: white; padding: 15px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; }
         .view-container { padding: 20px; overflow-y: auto; flex: 1; }
         .section { display: none; }
         .section.active { display: block; }
 
-        #admin-map { height: calc(100vh - 120px); width: 100%; border-radius: 8px; }
+        #admin-map { height: calc(100vh - 120px); width: 100%; border-radius: 8px; background: #e5e7eb; }
         table { width: 100%; border-collapse: collapse; background: white; }
         th { text-align: left; padding: 12px; background: #f8fafc; font-size: 0.75rem; color: #64748b; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; }
         td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 0.85rem; }
@@ -56,8 +58,9 @@
     </div>
 
     <div class="main" id="main-content">
-        <div class="header" style="background:white; padding:15px 30px; border-bottom: 1px solid #e2e8f0;">
+        <div class="header">
             <h1 id="view-title" style="margin:0; font-size: 1.1rem;">USER PROFILES</h1>
+            <div id="map-status" style="font-size: 0.75rem; color: #94a3b8; display: none;">Mapbox Active</div>
         </div>
         <div class="view-container">
             <div id="view-table" class="section active">
@@ -76,11 +79,12 @@
         const S_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
         const client = createClient(S_URL, S_KEY);
 
-        // Mapbox Configuration
-        mapboxgl.accessToken = 'pk.eyJ1Ijoiam9uYXRoYW5leSIsImEiOiJjbTZueXh3ZzAwNXBpMmpxeHh6Ym96Ym9pIn0.hR_YtT794E767YV6y72zGg';
+        // REPLACE THE TOKEN BELOW WITH YOUR WORKING MAPBOX TOKEN
+        const MAPBOX_TOKEN = 'pk.eyJ1Ijoiam9uYXRoYW5leSIsImEiOiJjbTZueXh3ZzAwNXBpMmpxeHh6Ym96Ym9pIn0.hR_YtT794E767YV6y72zGg';
+        mapboxgl.accessToken = MAPBOX_TOKEN;
+
         let map = null;
         const markers = { v: {}, p: {} };
-
         const schemas = {
             user_profiles: ['id', 'full_name', 'role', 'is_active'],
             vehicles: ['plate_number', 'vehicle_type', 'capacity', 'is_registered'],
@@ -122,16 +126,19 @@
         window.switchView = function(tableName, el) {
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             el.classList.add('active');
+            
             const tableSec = document.getElementById('view-table');
             const liveSec = document.getElementById('view-live');
 
             if (tableName === 'live') {
                 tableSec.classList.remove('active');
                 liveSec.classList.add('active');
+                document.getElementById('map-status').style.display = 'block';
                 initMap();
             } else {
                 liveSec.classList.remove('active');
                 tableSec.classList.add('active');
+                document.getElementById('map-status').style.display = 'none';
                 fetchTableData(tableName);
             }
             document.getElementById('view-title').innerText = tableName.toUpperCase().replace('_', ' ');
@@ -143,10 +150,10 @@
             const cols = schemas[tableName];
             
             head.innerHTML = `<tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>`;
-            const { data } = await client.from(tableName).select('*');
+            const { data, error } = await client.from(tableName).select('*');
 
-            if (!data || data.length === 0) {
-                body.innerHTML = `<tr><td colspan="${cols.length}" class="empty-msg">Table is currently empty.</td></tr>`;
+            if (error || !data || data.length === 0) {
+                body.innerHTML = `<tr><td colspan="${cols.length}" class="empty-msg">Table "${tableName}" is currently empty.</td></tr>`;
                 return;
             }
 
@@ -157,21 +164,31 @@
 
         function initMap() {
             if (map) return;
-            map = new mapboxgl.Map({
-                container: 'admin-map',
-                style: 'mapbox://styles/mapbox/streets-v12',
-                center: [120.9842, 14.5995],
-                zoom: 12
-            });
+            try {
+                map = new mapboxgl.Map({
+                    container: 'admin-map',
+                    style: 'mapbox://styles/mapbox/streets-v12',
+                    center: [120.9842, 14.5995],
+                    zoom: 11
+                });
 
-            client.channel('realtime-admin')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_location' }, p => updateMarker(p.new, 'v'))
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'passenger_location' }, p => updateMarker(p.new, 'p'))
-                .subscribe();
+                map.on('error', (e) => {
+                    if (e.error.status === 401) {
+                        alert("Mapbox Token Invalid. Please check your Access Token in the code.");
+                    }
+                });
+
+                client.channel('realtime-admin')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_location' }, p => updateMarker(p.new, 'v'))
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'passenger_location' }, p => updateMarker(p.new, 'p'))
+                    .subscribe();
+            } catch (err) {
+                console.error("Mapbox failed to load:", err);
+            }
         }
 
         function updateMarker(data, type) {
-            if (!data || !data.latitude) return;
+            if (!data || !data.latitude || !data.longitude || !map) return;
             const id = type === 'v' ? data.plate_number : data.user_id;
             const color = type === 'v' ? '#10b981' : '#3b82f6';
 
@@ -179,11 +196,12 @@
                 markers[type][id].setLngLat([data.longitude, data.latitude]);
             } else {
                 const el = document.createElement('div');
-                el.style.width = '12px';
-                el.style.height = '12px';
+                el.style.width = '14px';
+                el.style.height = '14px';
                 el.style.backgroundColor = color;
                 el.style.borderRadius = '50%';
                 el.style.border = '2px solid white';
+                el.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
 
                 markers[type][id] = new mapboxgl.Marker(el)
                     .setLngLat([data.longitude, data.latitude])
