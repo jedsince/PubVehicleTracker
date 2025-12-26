@@ -3,26 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Admin | PubVehicleTracker</title>
+    <title>Master Admin | PubVehicleTracker</title>
     
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <style>
         :root { --sidebar: #0f172a; --bg: #f8fafc; --accent: #3b82f6; --danger: #ef4444; }
         body { margin: 0; display: flex; height: 100vh; font-family: 'Inter', sans-serif; background: var(--bg); overflow: hidden; }
         
-        /* Auth Screen */
         #auth-screen { position: fixed; inset: 0; background: var(--sidebar); z-index: 9999; display: flex; align-items: center; justify-content: center; }
         .auth-card { background: white; padding: 40px; border-radius: 12px; width: 350px; text-align: center; }
         .auth-card input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; }
         .auth-card button { width: 100%; padding: 12px; background: var(--accent); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
         
-        /* Loading Overlay */
-        #loading-overlay { display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.9); z-index: 10000; color: white; align-items: center; justify-content: center; flex-direction: column; }
-
-        /* Dashboard Layout */
         .sidebar { width: 280px; background: var(--sidebar); color: white; display: none; flex-direction: column; padding: 20px; }
         .main { flex: 1; display: none; flex-direction: column; overflow: hidden; }
         .nav-btn { padding: 12px; cursor: pointer; border-radius: 6px; margin-bottom: 5px; font-size: 0.85rem; }
@@ -36,12 +31,9 @@
 </head>
 <body>
 
-    <div id="loading-overlay">Verifying Admin Credentials...</div>
-
     <div id="auth-screen">
         <div class="auth-card">
-            <h1 style="font-size: 1.5rem; margin-bottom: 5px;">Admin Login</h1>
-            <p style="color: #64748b; font-size: 0.8rem; margin-bottom: 20px;">Restricted Access Only</p>
+            <h1>Admin Login</h1>
             <input type="email" id="login-email" placeholder="Email">
             <input type="password" id="login-pass" placeholder="Password">
             <button onclick="handleLogin()">Authorize Access</button>
@@ -51,10 +43,10 @@
 
     <div class="sidebar" id="sidebar">
         <h2 style="color: var(--accent); font-size: 1rem; margin-bottom: 25px;">MASTER CONSOLE</h2>
-        <div class="nav-btn active" onclick="switchView('user_profiles', this)">Users (user_profiles)</div>
-        <div class="nav-btn" onclick="switchView('vehicles', this)">Fleet (vehicles)</div>
-        <div class="nav-btn" onclick="switchView('active_routes', this)">Routes (active_routes)</div>
-        <div class="nav-btn" onclick="switchView('terminals', this)">Terminals (terminals)</div>
+        <div class="nav-btn active" onclick="switchView('user_profiles', this)">Users</div>
+        <div class="nav-btn" onclick="switchView('vehicles', this)">Fleet</div>
+        <div class="nav-btn" onclick="switchView('active_routes', this)">Routes</div>
+        <div class="nav-btn" onclick="switchView('terminals', this)">Terminals</div>
         <div class="nav-btn" onclick="switchView('live', this)" style="margin-top:20px; border: 1px solid #334155;">🛰️ LIVE VIEW</div>
         <button onclick="handleLogout()" style="margin-top: auto; padding: 10px; background: #ef4444; color: white; border: none; border-radius: 6px; cursor: pointer;">Logout</button>
     </div>
@@ -65,10 +57,7 @@
         </div>
         <div class="view-container" style="padding: 25px; flex: 1; overflow-y: auto;">
             <div id="view-table" class="section active">
-                <table id="master-table">
-                    <thead id="table-head"></thead>
-                    <tbody id="table-body"></tbody>
-                </table>
+                <table><thead id="table-head"></thead><tbody id="table-body"></tbody></table>
             </div>
             <div id="view-live" class="section">
                 <div id="admin-map"></div>
@@ -80,9 +69,15 @@
         (function() {
             "use strict";
 
+            // Safety check for Leaflet and Supabase
+            if (typeof L === 'undefined' || typeof supabase === 'undefined') {
+                console.error("Critical libraries failed to load due to browser tracking prevention.");
+                return;
+            }
+
             const S_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
             const S_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
-            const supabase = window.supabase.createClient(S_URL, S_KEY);
+            const client = supabase.createClient(S_URL, S_KEY);
 
             let map = null;
             const markers = { v: {}, p: {} };
@@ -93,114 +88,80 @@
                 terminals: ['name', 'route_id', 'start_lat', 'start_lon']
             };
 
-            // --- ROLE-BASED LOGIN ---
             window.handleLogin = async function() {
                 const email = document.getElementById('login-email').value;
                 const password = document.getElementById('login-pass').value;
-                const errEl = document.getElementById('auth-error');
-                const loading = document.getElementById('loading-overlay');
-
-                loading.style.display = 'flex';
-                errEl.style.display = 'none';
-
-                const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+                const { data, error } = await client.auth.signInWithPassword({ email, password });
                 
                 if (error) {
-                    loading.style.display = 'none';
-                    errEl.innerText = error.message;
-                    errEl.style.display = 'block';
+                    document.getElementById('auth-error').innerText = error.message;
+                    document.getElementById('auth-error').style.display = 'block';
                     return;
                 }
 
-                // CHECK ROLE IN user_profiles
-                const { data: profile, error: pError } = await supabase
-                    .from('user_profiles')
-                    .select('role')
-                    .eq('id', data.user.id)
-                    .single();
+                const { data: profile } = await client.from('user_profiles').select('role').eq('id', data.user.id).single();
 
-                if (pError || !profile || profile.role !== 'admin') {
-                    await supabase.auth.signOut();
-                    loading.style.display = 'none';
-                    errEl.innerText = "Access Denied: You do not have an Admin role.";
-                    errEl.style.display = 'block';
-                } else {
-                    loading.style.display = 'none';
-                    // Dashboard is shown via onAuthStateChange
+                if (!profile || profile.role !== 'admin') {
+                    await client.auth.signOut();
+                    alert("Access Denied: Admin Role Required.");
                 }
             };
 
-            window.handleLogout = async function() {
-                await supabase.auth.signOut();
-                window.location.reload();
-            };
+            window.handleLogout = async () => { await client.auth.signOut(); window.location.reload(); };
 
-            supabase.auth.onAuthStateChange(async (event, session) => {
+            client.auth.onAuthStateChange(async (event, session) => {
                 if (session) {
-                    // Double check role on refresh
-                    const { data } = await supabase.from('user_profiles').select('role').eq('id', session.user.id).single();
-                    if (data && data.role === 'admin') {
+                    const { data } = await client.from('user_profiles').select('role').eq('id', session.user.id).single();
+                    if (data?.role === 'admin') {
                         document.getElementById('auth-screen').style.display = 'none';
                         document.getElementById('sidebar').style.display = 'flex';
                         document.getElementById('main-content').style.display = 'flex';
                         fetchTableData('user_profiles');
-                    } else {
-                        await supabase.auth.signOut();
-                    }
-                } else {
-                    document.getElementById('auth-screen').style.display = 'flex';
-                    document.getElementById('sidebar').style.display = 'none';
-                    document.getElementById('main-content').style.display = 'none';
+                    } else { await client.auth.signOut(); }
                 }
             });
 
-            // --- SYSTEM LOGIC ---
             window.switchView = function(tableName, el) {
                 document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
                 el.classList.add('active');
-                const tableSec = document.getElementById('view-table');
-                const liveSec = document.getElementById('view-live');
-
                 if (tableName === 'live') {
-                    tableSec.classList.remove('active');
-                    liveSec.classList.add('active');
+                    document.getElementById('view-table').classList.remove('active');
+                    document.getElementById('view-live').classList.add('active');
                     initMap();
                 } else {
-                    liveSec.classList.remove('active');
-                    tableSec.classList.add('active');
+                    document.getElementById('view-live').classList.remove('active');
+                    document.getElementById('view-table').classList.add('active');
                     fetchTableData(tableName);
                 }
                 document.getElementById('view-title').innerText = tableName.toUpperCase();
             };
 
             async function fetchTableData(tableName) {
-                const { data, error } = await supabase.from(tableName).select('*');
-                if (error) return;
+                const { data } = await client.from(tableName).select('*');
                 const cols = schemas[tableName];
                 document.getElementById('table-head').innerHTML = `<tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>`;
-                document.getElementById('table-body').innerHTML = data.map(row => `
-                    <tr>${cols.map(c => `<td>${row[c] !== null ? row[c] : '--'}</td>`).join('')}</tr>
-                `).join('');
+                document.getElementById('table-body').innerHTML = data?.map(row => `
+                    <tr>${cols.map(c => `<td>${row[c] ?? '--'}</td>`).join('')}</tr>
+                `).join('') || '';
             }
 
             function initMap() {
                 if (map) return;
                 map = L.map('admin-map').setView([14.5995, 120.9842], 13);
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-                supabase.channel('admin-live')
+                client.channel('live-admin')
                     .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_location' }, p => updateLive(p.new, 'v'))
                     .on('postgres_changes', { event: '*', schema: 'public', table: 'passenger_location' }, p => updateLive(p.new, 'p'))
                     .subscribe();
             }
 
             function updateLive(data, type) {
-                if (!data || !data.latitude || !data.longitude) return;
+                if (!data || !data.latitude) return;
                 const id = type === 'v' ? data.plate_number : data.user_id;
-                const color = type === 'v' ? '#10b981' : '#3b82f6';
                 if (markers[type][id]) {
                     markers[type][id].setLatLng([data.latitude, data.longitude]);
                 } else {
-                    markers[type][id] = L.circleMarker([data.latitude, data.longitude], { color, radius: 7, fillOpacity: 0.8 }).addTo(map);
+                    markers[type][id] = L.circleMarker([data.latitude, data.longitude], { color: type === 'v' ? '#10b981' : '#3b82f6', radius: 7 }).addTo(map);
                 }
             }
         })();
