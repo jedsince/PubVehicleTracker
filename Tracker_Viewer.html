@@ -13,30 +13,43 @@
         :root { --sidebar: #0f172a; --bg: #f8fafc; --accent: #3b82f6; --danger: #ef4444; }
         body { margin: 0; display: flex; height: 100vh; font-family: 'Inter', sans-serif; background: var(--bg); overflow: hidden; }
         
-        #auth-screen { position: fixed; inset: 0; background: var(--sidebar); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+        /* Loading Overlay */
+        #loading-overlay { 
+            display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.95); 
+            z-index: 10000; color: white; align-items: center; justify-content: center; flex-direction: column; 
+        }
+
+        /* Auth Screen */
+        #auth-screen { position: fixed; inset: 0; background: var(--sidebar); z-index: 999; display: flex; align-items: center; justify-content: center; }
         .auth-card { background: white; padding: 40px; border-radius: 12px; width: 350px; text-align: center; }
         .auth-card input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; }
         .auth-card button { width: 100%; padding: 12px; background: var(--accent); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
-        
+
+        /* Dashboard */
         .sidebar { width: 280px; background: var(--sidebar); color: white; display: none; flex-direction: column; padding: 20px; }
         .main { flex: 1; display: none; flex-direction: column; overflow: hidden; }
         .nav-btn { padding: 12px; cursor: pointer; border-radius: 6px; margin-bottom: 5px; font-size: 0.85rem; }
         .nav-btn.active { background: var(--accent); }
         
+        #admin-map { height: calc(100vh - 120px); width: 100%; border-radius: 8px; }
         table { width: 100%; border-collapse: collapse; background: white; }
         th { text-align: left; padding: 12px; background: #f8fafc; font-size: 0.7rem; color: #64748b; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; }
         td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 0.8rem; }
-        #admin-map { height: calc(100vh - 120px); width: 100%; border-radius: 8px; }
     </style>
 </head>
 <body>
+
+    <div id="loading-overlay">
+        <div style="margin-bottom: 15px;">Verifying Admin Credentials...</div>
+        <button onclick="location.reload()" style="background:none; border:1px solid white; color:white; padding:5px 10px; cursor:pointer; font-size:10px;">Cancel / Retry</button>
+    </div>
 
     <div id="auth-screen">
         <div class="auth-card">
             <h1>Admin Login</h1>
             <input type="email" id="login-email" placeholder="Email">
             <input type="password" id="login-pass" placeholder="Password">
-            <button onclick="handleLogin()">Authorize Access</button>
+            <button id="login-btn" onclick="handleLogin()">Authorize Access</button>
             <p id="auth-error" style="color: var(--danger); font-size: 0.75rem; margin-top: 10px; display: none;"></p>
         </div>
     </div>
@@ -69,15 +82,11 @@
         (function() {
             "use strict";
 
-            // Safety check for Leaflet and Supabase
-            if (typeof L === 'undefined' || typeof supabase === 'undefined') {
-                console.error("Critical libraries failed to load due to browser tracking prevention.");
-                return;
-            }
-
             const S_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
             const S_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
-            const client = supabase.createClient(S_URL, S_KEY);
+            
+            // Initialize with a unique name to prevent conflicts
+            const adminSupabase = supabase.createClient(S_URL, S_KEY);
 
             let map = null;
             const markers = { v: {}, p: {} };
@@ -88,36 +97,75 @@
                 terminals: ['name', 'route_id', 'start_lat', 'start_lon']
             };
 
+            const toggleLoading = (show) => document.getElementById('loading-overlay').style.display = show ? 'flex' : 'none';
+            const showError = (msg) => {
+                const err = document.getElementById('auth-error');
+                err.innerText = msg;
+                err.style.display = 'block';
+                toggleLoading(false);
+            };
+
             window.handleLogin = async function() {
                 const email = document.getElementById('login-email').value;
                 const password = document.getElementById('login-pass').value;
-                const { data, error } = await client.auth.signInWithPassword({ email, password });
                 
-                if (error) {
-                    document.getElementById('auth-error').innerText = error.message;
-                    document.getElementById('auth-error').style.display = 'block';
-                    return;
-                }
+                if (!email || !password) return showError("Please enter both email and password.");
 
-                const { data: profile } = await client.from('user_profiles').select('role').eq('id', data.user.id).single();
+                toggleLoading(true);
 
-                if (!profile || profile.role !== 'admin') {
-                    await client.auth.signOut();
-                    alert("Access Denied: Admin Role Required.");
+                try {
+                    const { data, error } = await adminSupabase.auth.signInWithPassword({ email, password });
+                    
+                    if (error) throw error;
+
+                    // Immediately verify role
+                    const { data: profile, error: pError } = await adminSupabase
+                        .from('user_profiles')
+                        .select('role')
+                        .eq('id', data.user.id)
+                        .maybeSingle();
+
+                    if (pError) throw new Error("Database error checking role.");
+                    
+                    if (!profile || profile.role !== 'admin') {
+                        await adminSupabase.auth.signOut();
+                        throw new Error("Access Denied: You are not authorized as an Admin.");
+                    }
+
+                    // Success will be handled by onAuthStateChange
+                } catch (err) {
+                    showError(err.message);
                 }
             };
 
-            window.handleLogout = async () => { await client.auth.signOut(); window.location.reload(); };
+            window.handleLogout = async () => { 
+                toggleLoading(true);
+                await adminSupabase.auth.signOut(); 
+                window.location.reload(); 
+            };
 
-            client.auth.onAuthStateChange(async (event, session) => {
+            // Monitor Auth Changes
+            adminSupabase.auth.onAuthStateChange(async (event, session) => {
                 if (session) {
-                    const { data } = await client.from('user_profiles').select('role').eq('id', session.user.id).single();
-                    if (data?.role === 'admin') {
-                        document.getElementById('auth-screen').style.display = 'none';
-                        document.getElementById('sidebar').style.display = 'flex';
-                        document.getElementById('main-content').style.display = 'flex';
-                        fetchTableData('user_profiles');
-                    } else { await client.auth.signOut(); }
+                    try {
+                        const { data: profile } = await adminSupabase.from('user_profiles').select('role').eq('id', session.user.id).single();
+                        if (profile?.role === 'admin') {
+                            document.getElementById('auth-screen').style.display = 'none';
+                            document.getElementById('sidebar').style.display = 'flex';
+                            document.getElementById('main-content').style.display = 'flex';
+                            toggleLoading(false);
+                            fetchTableData('user_profiles');
+                        } else {
+                            handleLogout();
+                        }
+                    } catch (e) {
+                        handleLogout();
+                    }
+                } else {
+                    document.getElementById('auth-screen').style.display = 'flex';
+                    document.getElementById('sidebar').style.display = 'none';
+                    document.getElementById('main-content').style.display = 'none';
+                    toggleLoading(false);
                 }
             });
 
@@ -137,19 +185,22 @@
             };
 
             async function fetchTableData(tableName) {
-                const { data } = await client.from(tableName).select('*');
+                const { data, error } = await adminSupabase.from(tableName).select('*');
+                if (error) return console.error(error);
+                
                 const cols = schemas[tableName];
                 document.getElementById('table-head').innerHTML = `<tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr>`;
                 document.getElementById('table-body').innerHTML = data?.map(row => `
                     <tr>${cols.map(c => `<td>${row[c] ?? '--'}</td>`).join('')}</tr>
-                `).join('') || '';
+                `).join('') || '<tr><td colspan="100%">No data available</td></tr>';
             }
 
             function initMap() {
                 if (map) return;
                 map = L.map('admin-map').setView([14.5995, 120.9842], 13);
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-                client.channel('live-admin')
+                
+                adminSupabase.channel('live-admin')
                     .on('postgres_changes', { event: '*', schema: 'public', table: 'vehicle_location' }, p => updateLive(p.new, 'v'))
                     .on('postgres_changes', { event: '*', schema: 'public', table: 'passenger_location' }, p => updateLive(p.new, 'p'))
                     .subscribe();
@@ -161,7 +212,11 @@
                 if (markers[type][id]) {
                     markers[type][id].setLatLng([data.latitude, data.longitude]);
                 } else {
-                    markers[type][id] = L.circleMarker([data.latitude, data.longitude], { color: type === 'v' ? '#10b981' : '#3b82f6', radius: 7 }).addTo(map);
+                    markers[type][id] = L.circleMarker([data.latitude, data.longitude], { 
+                        color: type === 'v' ? '#10b981' : '#3b82f6', 
+                        radius: 7, 
+                        fillOpacity: 0.8 
+                    }).addTo(map);
                 }
             }
         })();
