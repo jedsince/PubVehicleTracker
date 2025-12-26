@@ -12,11 +12,13 @@
         :root { --sidebar: #0f172a; --bg: #f8fafc; --accent: #3b82f6; --danger: #ef4444; }
         body { margin: 0; display: flex; height: 100vh; font-family: 'Inter', sans-serif; background: var(--bg); overflow: hidden; }
         
+        /* Auth Screen */
         #auth-screen { position: fixed; inset: 0; background: var(--sidebar); z-index: 999; display: flex; align-items: center; justify-content: center; }
         .auth-card { background: white; padding: 40px; border-radius: 12px; width: 350px; text-align: center; }
         .auth-card input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; }
         .auth-card button { width: 100%; padding: 12px; background: var(--accent); color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
 
+        /* Sidebar & Layout */
         .sidebar { width: 280px; background: var(--sidebar); color: white; display: none; flex-direction: column; padding: 20px; }
         .nav-btn { padding: 12px; cursor: pointer; border-radius: 6px; margin-bottom: 5px; font-size: 0.85rem; }
         .nav-btn.active { background: var(--accent); }
@@ -30,22 +32,21 @@
         th { text-align: left; padding: 12px; background: #f8fafc; font-size: 0.7rem; color: #64748b; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; }
         td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 0.8rem; }
         
+        /* Modal & Form Grid */
         #modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:2000; align-items:center; justify-content:center; }
         .modal-content { background:white; padding:25px; border-radius:12px; width:550px; max-height: 95vh; overflow-y: auto; }
-
-        #add-btn { position:fixed; bottom:80px; right:30px; width:60px; height:60px; border-radius:50%; background:var(--accent); color:white; border:none; font-size:30px; cursor:pointer; box-shadow:0 10px 15px rgba(59,130,246,0.4); z-index:1000; display:none; }
-
-        footer { position: absolute; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #e2e8f0; padding: 8px 20px; font-size: 0.7rem; color: #94a3b8; display: flex; justify-content: space-between; align-items: center; z-index: 10; }
-        
-        /* Optimized Grid UI */
         .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; }
         .full-width { grid-column: span 2; }
         .coord-group { background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; }
+        
+        /* Picker UI */
         .picker-btn { width: 100%; background: #fff; border: 1px solid var(--accent); color: var(--accent); padding: 8px; border-radius: 4px; font-size: 0.75rem; cursor: pointer; font-weight: 600; margin-top: 8px; transition: 0.2s; }
         .picker-btn:hover { background: var(--accent); color: white; }
         .picker-btn.active { background: #1e293b; color: white; border-color: #1e293b; }
-        
         #mini-map-container { display: none; height: 350px; width: 100%; margin: 15px 0; border-radius: 8px; border: 2px solid var(--accent); position: relative; overflow: hidden; }
+
+        #add-btn { position:fixed; bottom:80px; right:30px; width:60px; height:60px; border-radius:50%; background:var(--accent); color:white; border:none; font-size:30px; cursor:pointer; box-shadow:0 10px 15px rgba(59,130,246,0.4); z-index:1000; display:none; }
+        footer { position: absolute; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #e2e8f0; padding: 8px 20px; font-size: 0.7rem; color: #94a3b8; display: flex; justify-content: space-between; align-items: center; z-index: 10; }
     </style>
 </head>
 <body>
@@ -61,7 +62,7 @@
 
     <div id="modal-overlay">
         <div class="modal-content">
-            <h2 id="modal-title" style="margin:0 0 15px 0; font-size: 1.1rem;">New Terminal Entry</h2>
+            <h2 id="modal-title" style="margin:0 0 15px 0; font-size: 1.1rem;">New Entry</h2>
             <form id="entry-form">
                 <div id="form-fields" class="field-grid"></div>
                 <div id="mini-map-container">
@@ -90,8 +91,8 @@
             <div id="view-live" style="display:none;"><div id="admin-map"></div></div>
         </div>
         <footer>
-            <span>Alpha v0.005 | PubVehicleTracker Build</span>
-            <span>Last Update: 2025-12-26 | Git Ref: Grid-Modal-Optimizer</span>
+            <span>Alpha v0.007 | PubVehicleTracker Build</span>
+            <span>Last Update: 2025-12-26 | Git Ref: Drop-Redundant-Column</span>
         </footer>
     </div>
 
@@ -159,12 +160,7 @@
             const fields = document.getElementById('form-fields');
             fields.innerHTML = '';
             document.getElementById('mini-map-container').style.display = 'none';
-
-            if (currentTable === 'terminals') {
-                renderTerminalForm(fields);
-            } else {
-                renderStandardForm(fields);
-            }
+            if (currentTable === 'terminals') renderTerminalForm(fields); else renderStandardForm(fields);
             document.getElementById('modal-overlay').style.display = 'flex';
         };
 
@@ -179,34 +175,29 @@
         }
 
         function renderTerminalForm(container) {
-            // Name and ID Row
             ['id', 'name'].forEach(col => {
                 const div = document.createElement('div');
                 div.innerHTML = `<label style="font-size:0.7rem; font-weight:bold; color:#64748b;">${col.toUpperCase()}</label>
                 <input name="${col}" placeholder="${col}" style="width:100%; padding:10px; margin-top:5px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">`;
                 container.appendChild(div);
             });
-
-            // Start Group
             const startGroup = document.createElement('div');
             startGroup.className = 'coord-group';
-            startGroup.innerHTML = `<div style="font-size:0.75rem; font-weight:800; margin-bottom:10px;">A. START TERMINAL</div>
+            startGroup.innerHTML = `<div style="font-size:0.75rem; font-weight:800; margin-bottom:10px;">START TERMINAL</div>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:5px;">
                     <input id="input-start_lat" name="start_lat" placeholder="LAT" style="padding:8px; border:1px solid #ddd; border-radius:4px; font-size:0.75rem;">
                     <input id="input-start_lon" name="start_lon" placeholder="LON" style="padding:8px; border:1px solid #ddd; border-radius:4px; font-size:0.75rem;">
                 </div>
-                <button type="button" class="picker-btn" id="btn-pick-start" onclick="initPicker('start')">📍 PIN START ON MAP</button>`;
+                <button type="button" class="picker-btn" id="btn-pick-start" onclick="initPicker('start')">📍 PIN START</button>`;
             container.appendChild(startGroup);
-
-            // End Group
             const endGroup = document.createElement('div');
             endGroup.className = 'coord-group';
-            endGroup.innerHTML = `<div style="font-size:0.75rem; font-weight:800; margin-bottom:10px; color:var(--danger);">B. END TERMINAL</div>
+            endGroup.innerHTML = `<div style="font-size:0.75rem; font-weight:800; margin-bottom:10px; color:var(--danger);">END TERMINAL</div>
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:5px;">
                     <input id="input-end_lat" name="end_lat" placeholder="LAT" style="padding:8px; border:1px solid #ddd; border-radius:4px; font-size:0.75rem;">
                     <input id="input-end_lon" name="end_lon" placeholder="LON" style="padding:8px; border:1px solid #ddd; border-radius:4px; font-size:0.75rem;">
                 </div>
-                <button type="button" class="picker-btn" id="btn-pick-end" onclick="initPicker('end')">📍 PIN END ON MAP</button>`;
+                <button type="button" class="picker-btn" id="btn-pick-end" onclick="initPicker('end')">📍 PIN END</button>`;
             container.appendChild(endGroup);
         }
 
@@ -215,30 +206,22 @@
             document.getElementById('mini-map-container').style.display = 'block';
             document.querySelectorAll('.picker-btn').forEach(b => b.classList.remove('active'));
             document.getElementById(`btn-pick-${type}`).classList.add('active');
-
             if (!miniMap) {
                 miniMap = new mapboxgl.Map({ container: 'mini-map', style: 'mapbox://styles/mapbox/streets-v12', center: [120.9842, 14.5995], zoom: 12 });
                 miniMap.on('click', (e) => {
-                    if (!pickerTarget) return;
                     const { lng, lat } = e.lngLat;
                     document.getElementById(`input-${pickerTarget}_lat`).value = lat.toFixed(6);
                     document.getElementById(`input-${pickerTarget}_lon`).value = lng.toFixed(6);
-                    
                     if (miniMarkers[pickerTarget]) miniMarkers[pickerTarget].remove();
-                    miniMarkers[pickerTarget] = new mapboxgl.Marker({color: pickerTarget === 'start' ? '#1e293b' : '#ef4444'})
-                        .setLngLat([lng, lat]).addTo(miniMap);
+                    miniMarkers[pickerTarget] = new mapboxgl.Marker({color: pickerTarget === 'start' ? '#1e293b' : '#ef4444'}).setLngLat([lng, lat]).addTo(miniMap);
                 });
-            } else {
-                setTimeout(() => miniMap.resize(), 100);
-            }
+            } else { setTimeout(() => miniMap.resize(), 100); }
         }
 
         window.closeModal = () => {
             document.getElementById('modal-overlay').style.display = 'none';
-            if (miniMarkers.start) miniMarkers.start.remove();
-            if (miniMarkers.end) miniMarkers.end.remove();
-            miniMarkers = { start: null, end: null };
-            pickerTarget = null;
+            if (miniMarkers.start) miniMarkers.start.remove(); if (miniMarkers.end) miniMarkers.end.remove();
+            miniMarkers = { start: null, end: null }; pickerTarget = null;
         };
 
         document.getElementById('entry-form').onsubmit = async (e) => {
@@ -246,8 +229,7 @@
             const payload = {};
             new FormData(e.target).forEach((val, key) => payload[key] = val);
             const { error } = await client.from(currentTable).insert([payload]);
-            if (error) alert("Error: " + error.message);
-            else { window.closeModal(); fetchTableData(currentTable); }
+            if (error) alert("Error: " + error.message); else { window.closeModal(); fetchTableData(currentTable); }
         };
 
         async function initMap() {
