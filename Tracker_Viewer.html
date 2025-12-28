@@ -3,14 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Master Admin | Alpha v0.008</title>
+    <title>Master Admin | Alpha v0.009</title>
     <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
     <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
     <style>
         :root { --sidebar: #0f172a; --bg: #f8fafc; --accent: #3b82f6; --danger: #ef4444; --success: #10b981; }
         body { margin: 0; display: flex; height: 100vh; font-family: 'Inter', sans-serif; background: var(--bg); overflow: hidden; }
         
-        /* Auth & Sidebar */
         #auth-screen { position: fixed; inset: 0; background: var(--sidebar); z-index: 999; display: flex; align-items: center; justify-content: center; }
         .auth-card { background: white; padding: 40px; border-radius: 12px; width: 350px; text-align: center; }
         .auth-card input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #cbd5e1; border-radius: 6px; }
@@ -21,24 +20,20 @@
         .nav-btn.active { background: var(--accent); color: white; }
 
         .main { flex: 1; display: none; flex-direction: column; overflow: hidden; position: relative; }
-        .header { background: white; padding: 15px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; }
+        .header { background: white; padding: 15px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
         .view-container { padding: 20px; overflow-y: auto; flex: 1; padding-bottom: 60px; }
         
-        /* Tables & UI */
         table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         th { text-align: left; padding: 12px; background: #f8fafc; font-size: 0.7rem; color: #64748b; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; }
         td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 0.8rem; }
-        .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.65rem; font-weight: bold; }
-        .badge-danger { background: #fee2e2; color: #b91c1c; }
-        .badge-success { background: #dcfce7; color: #15803d; }
+        
+        .log-type { padding: 2px 6px; border-radius: 4px; font-size: 0.6rem; font-weight: bold; }
+        .type-assignment { background: #e0f2fe; color: #0369a1; }
+        .type-travel { background: #dcfce7; color: #15803d; }
+        .type-timeout { background: #fee2e2; color: #b91c1c; }
 
-        /* Map & Modal */
-        #admin-map { height: calc(100vh - 120px); width: 100%; border-radius: 8px; }
         #modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:2000; align-items:center; justify-content:center; }
         .modal-content { background:white; padding:25px; border-radius:12px; width:500px; }
-        .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-        .full-width { grid-column: span 2; }
-        #add-btn { position:fixed; bottom:80px; right:30px; width:60px; height:60px; border-radius:50%; background:var(--accent); color:white; border:none; font-size:30px; cursor:pointer; }
         footer { position: absolute; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #e2e8f0; padding: 8px 20px; font-size: 0.7rem; color: #94a3b8; display: flex; justify-content: space-between; }
     </style>
 </head>
@@ -55,45 +50,44 @@
 
     <div id="modal-overlay">
         <div class="modal-content">
-            <h2 id="modal-title" style="margin:0 0 15px 0; font-size: 1.1rem;">Manage Assignment</h2>
-            <div id="transfer-ui" style="display:none;">
-                <label style="font-size:0.7rem; font-weight:bold; color:#64748b;">SELECT DRIVER</label>
+            <h2 id="modal-title" style="margin:0 0 15px 0; font-size: 1.1rem;">Assignment Transfer</h2>
+            <div id="transfer-ui">
+                <label style="font-size:0.7rem; font-weight:bold; color:#64748b;">TARGET DRIVER</label>
                 <select id="driver-select" style="width:100%; padding:12px; margin-top:5px; border-radius:6px; border:1px solid #ddd;"></select>
-                <button onclick="window.saveAssignment()" style="width:100%; padding:12px; background:var(--accent); color:white; border:none; border-radius:6px; margin-top:15px; font-weight:bold;">Assign to Vehicle</button>
+                <button onclick="window.saveAssignment()" style="width:100%; padding:12px; background:var(--accent); color:white; border:none; border-radius:6px; margin-top:15px; font-weight:bold;">Confirm Assignment</button>
             </div>
-            <form id="entry-form"><div id="form-fields" class="field-grid"></div><button type="submit" style="width:100%; padding:14px; background:var(--accent); color:white; border:none; border-radius:6px; margin-top:10px; font-weight:bold;">Save Entry</button></form>
             <button onclick="window.closeModal()" style="width:100%; padding:10px; background:#f1f5f9; border:none; border-radius:6px; margin-top:5px; cursor:pointer;">Cancel</button>
         </div>
     </div>
 
     <div class="sidebar" id="sidebar">
         <h2 style="color: var(--accent); font-size: 0.8rem; margin-bottom: 25px; letter-spacing:1px;">MASTER ADMIN</h2>
-        <div class="nav-btn active" onclick="window.switchView('fleet_manager', this)">Fleet & Drivers</div>
-        <div class="nav-btn" onclick="window.switchView('passengers', this)">Passenger Registry</div>
+        <div class="nav-btn" onclick="window.switchView('fleet_manager', this)">Fleet & Drivers</div>
+        <div class="nav-btn" onclick="window.switchView('history', this)">Logs & History</div>
         <div class="nav-btn" onclick="window.switchView('terminals', this)">Terminals</div>
         <div class="nav-btn" onclick="window.switchView('live', this)" style="margin-top:20px; border: 1px solid #334155;">🛰️ HUB MONITOR</div>
         <button onclick="window.handleLogout()" style="margin-top: auto; padding: 10px; background: #334155; color: white; border: none; border-radius: 6px;">Logout</button>
     </div>
 
     <div class="main" id="main-content">
-        <div class="header"><h1 id="view-title" style="margin:0; font-size: 1rem;">FLEET & DRIVERS</h1></div>
+        <div class="header">
+            <h1 id="view-title" style="margin:0; font-size: 1rem;">FLEET MANAGER</h1>
+            <div id="cleanup-status" style="font-size:0.65rem; color:var(--success);">● Auto-Cleanup Active</div>
+        </div>
         <div class="view-container">
             <div id="view-table"><table><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div>
-            <div id="view-live" style="display:none;"><div id="admin-map"></div></div>
+            <div id="view-live" style="display:none;"><div id="admin-map" style="height:calc(100vh - 150px);"></div></div>
         </div>
-        <footer><span>Alpha v0.008 | Build 2025.12.28</span><span>Relational Driver-Vehicle Sync</span></footer>
+        <footer><span>Alpha v0.009 | History & TTL Build</span><span>Sync: Connected</span></footer>
     </div>
-
-    <button id="add-btn" onclick="window.openModal()">+</button>
 
     <script type="module">
         import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
         const S_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
         const S_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
         const client = createClient(S_URL, S_KEY);
-        mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
         
-        let map = null, currentTable = 'fleet_manager', activePlate = null;
+        let currentTable = 'fleet_manager', activePlate = null;
 
         window.handleLogin = async () => {
             const { error } = await client.auth.signInWithPassword({
@@ -120,74 +114,65 @@
             document.getElementById('view-table').style.display = tableName === 'live' ? 'none' : 'block';
             document.getElementById('view-live').style.display = tableName === 'live' ? 'block' : 'none';
             document.getElementById('view-title').innerText = tableName.toUpperCase().replace('_', ' ');
-            if (tableName === 'live') initMap(); else refreshData();
+            refreshData();
         };
 
         async function refreshData() {
             const body = document.getElementById('table-body');
             const head = document.getElementById('table-head');
-            body.innerHTML = '<tr><td colspan="4">Loading assets...</td></tr>';
+            body.innerHTML = '';
 
             if (currentTable === 'fleet_manager') {
-                head.innerHTML = `<tr><th>Driver Name</th><th>Plate Number</th><th>Status</th><th>Action</th></tr>`;
+                head.innerHTML = `<tr><th>Driver</th><th>Plate</th><th>Status</th><th>Action</th></tr>`;
                 const { data: users } = await client.from('user_profiles').select('*').eq('role', 'driver');
                 const { data: vehicles } = await client.from('vehicles').select('*');
-                
-                body.innerHTML = '';
-                // 1. Show Drivers & their vehicles
                 users.forEach(u => {
                     const v = vehicles.find(veh => veh.assigned_driver_id === u.id);
-                    renderFleetRow(u.full_name, v ? v.plate_number : '---', !!v, u.id);
+                    body.innerHTML += `<tr><td><b>${u.full_name}</b></td><td>${v ? v.plate_number : '---'}</td><td>${v ? 'Active' : 'Awaiting Car'}</td><td><button onclick="window.openTransfer('${v ? v.plate_number : ''}')">Assign</button></td></tr>`;
                 });
-                // 2. Show Unassigned Vehicles
-                vehicles.filter(v => !v.assigned_driver_id).forEach(v => {
-                    renderFleetRow('UNASSIGNED', v.plate_number, false, null);
+            } else if (currentTable === 'history') {
+                head.innerHTML = `<tr><th>Time</th><th>Type</th><th>Plate</th><th>Details</th></tr>`;
+                const { data } = await client.from('vehicle_logs').select('*').order('timestamp', { ascending: false });
+                data.forEach(log => {
+                    const typeClass = `type-${log.log_type.toLowerCase()}`;
+                    body.innerHTML += `<tr>
+                        <td style="font-size:0.7rem;">${new Date(log.timestamp).toLocaleString()}</td>
+                        <td><span class="log-type ${typeClass}">${log.log_type}</span></td>
+                        <td>${log.plate_number}</td>
+                        <td style="font-size:0.7rem; color:#64748b;">${log.details?.reason || 'System update'}</td>
+                    </tr>`;
                 });
-            } else if (currentTable === 'passengers') {
-                head.innerHTML = `<tr><th>Name</th><th>Phone</th><th>ID</th></tr>`;
-                const { data } = await client.from('user_profiles').select('*').eq('role', 'passenger');
-                body.innerHTML = data.map(u => `<tr><td>${u.full_name}</td><td>${u.phone_number || 'N/A'}</td><td>${u.id}</td></tr>`).join('');
             }
         }
 
-        function renderFleetRow(name, plate, isAssigned, userId) {
-            const status = isAssigned ? '<span class="badge badge-success">ACTIVE</span>' : '<span class="badge badge-danger">ORPHANED</span>';
-            const row = `<tr>
-                <td><b>${name}</b></td>
-                <td>${plate}</td>
-                <td>${status}</td>
-                <td><button onclick="window.openTransfer('${plate}')" style="cursor:pointer; border:1px solid #ddd; background:white; padding:5px 10px; border-radius:4px; font-size:0.7rem;">Assign/Transfer</button></td>
-            </tr>`;
-            document.getElementById('table-body').insertAdjacentHTML('beforeend', row);
-        }
-
         window.openTransfer = async (plate) => {
+            if(!plate) return alert("Select a vehicle from the unassigned list first.");
             activePlate = plate;
-            document.getElementById('modal-title').innerText = `Assign Vehicle: ${plate}`;
-            document.getElementById('entry-form').style.display = 'none';
-            document.getElementById('transfer-ui').style.display = 'block';
-            
-            const { data: drivers } = await client.from('user_profiles').select('id, full_name').eq('role', 'driver');
-            const select = document.getElementById('driver-select');
-            select.innerHTML = '<option value="">-- Remove Driver --</option>' + 
-                drivers.map(d => `<option value="${d.id}">${d.full_name}</option>`).join('');
-            
             document.getElementById('modal-overlay').style.display = 'flex';
+            const { data } = await client.from('user_profiles').select('id, full_name').eq('role', 'driver');
+            document.getElementById('driver-select').innerHTML = data.map(d => `<option value="${d.id}">${d.full_name}</option>`).join('');
         };
 
         window.saveAssignment = async () => {
-            const driverId = document.getElementById('driver-select').value || null;
-            const { error } = await client.from('vehicles')
-                .update({ assigned_driver_id: driverId })
-                .eq('plate_number', activePlate);
-            
-            if (error) alert(error.message);
-            else { window.closeModal(); refreshData(); }
+            const driverId = document.getElementById('driver-select').value;
+            // 1. Update Vehicle
+            await client.from('vehicles').update({ assigned_driver_id: driverId }).eq('plate_number', activePlate);
+            // 2. Log the change
+            await client.from('vehicle_logs').insert([{ 
+                plate_number: activePlate, 
+                log_type: 'ASSIGNMENT', 
+                details: { reason: `Handover to Driver ID: ${driverId}` } 
+            }]);
+            window.closeModal(); refreshData();
         };
 
-        window.closeModal = () => { document.getElementById('modal-overlay').style.display = 'none'; };
+        window.closeModal = () => document.getElementById('modal-overlay').style.display = 'none';
 
-        // ... Terminal & Map Logic from v0.007 remains integrated ...
+        // Auto-Cleanup Trigger Simulator (Runs every 5 mins in background)
+        setInterval(async () => {
+            await client.rpc('clean_inactive_vehicles');
+            if(currentTable === 'history') refreshData();
+        }, 300000);
     </script>
 </body>
 </html>
