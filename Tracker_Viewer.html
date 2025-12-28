@@ -3,41 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Master Admin | Alpha v0.011</title>
+    <title>Master Admin | Alpha v0.012</title>
     <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
     <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
     <style>
         :root { --sidebar: #0f172a; --bg: #f8fafc; --accent: #3b82f6; --danger: #ef4444; --success: #10b981; }
         body { margin: 0; display: flex; height: 100vh; font-family: 'Inter', sans-serif; background: var(--bg); overflow: hidden; }
         
-        /* Sidebar Navigation */
+        /* Navigation */
         .sidebar { width: 260px; background: var(--sidebar); color: white; display: none; flex-direction: column; padding: 20px; border-right: 1px solid #1e293b; }
         .nav-btn { padding: 12px; cursor: pointer; border-radius: 6px; margin-bottom: 5px; font-size: 0.85rem; color: #94a3b8; transition: 0.2s; display: flex; align-items: center; gap: 10px; }
-        .nav-btn:hover { background: #1e293b; color: white; }
         .nav-btn.active { background: var(--accent); color: white; }
 
-        /* Content Area */
+        /* Main Layout */
         .main { flex: 1; display: none; flex-direction: column; overflow: hidden; position: relative; }
         .header { background: white; padding: 15px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
         .view-container { padding: 20px; overflow-y: auto; flex: 1; padding-bottom: 60px; }
         
-        /* Tables */
-        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
+        /* Split View for Terminals */
+        .terminal-split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; height: 100%; }
+        #terminal-map { width: 100%; height: 500px; border-radius: 12px; border: 1px solid #e2e8f0; }
+
+        /* Tables & UI */
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         th { text-align: left; padding: 12px; background: #f8fafc; font-size: 0.7rem; color: #64748b; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; }
         td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 0.8rem; }
         
-        /* Tags & Badges */
-        .badge { padding: 4px 8px; border-radius: 4px; font-size: 0.65rem; font-weight: bold; }
-        .badge-success { background: #dcfce7; color: #15803d; }
-        .badge-danger { background: #fee2e2; color: #b91c1c; }
-        .tag-log { font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; font-weight: 800; text-transform: uppercase; }
-        .tag-assignment { background: #e0f2fe; color: #0369a1; }
-
-        /* UI Overlays */
         #auth-screen { position: fixed; inset: 0; background: var(--sidebar); z-index: 999; display: flex; align-items: center; justify-content: center; }
         .auth-card { background: white; padding: 40px; border-radius: 12px; width: 350px; text-align: center; }
-        #modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:2000; align-items:center; justify-content:center; }
-        .modal-content { background:white; padding:30px; border-radius:12px; width:400px; }
         
         footer { position: absolute; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #e2e8f0; padding: 8px 20px; font-size: 0.7rem; color: #94a3b8; display: flex; justify-content: space-between; }
     </style>
@@ -53,24 +46,12 @@
         </div>
     </div>
 
-    <div id="modal-overlay">
-        <div class="modal-content">
-            <h2 id="modal-title" style="margin:0 0 15px 0; font-size: 1rem;">Vehicle Assignment</h2>
-            <div id="assignment-form">
-                <label style="font-size:0.7rem; font-weight:bold; color:#64748b;">ASSIGN DRIVER TO PLATE: <span id="active-plate-label"></span></label>
-                <select id="driver-select" style="width:100%; padding:12px; margin-top:5px; border:1px solid #ddd; border-radius:6px;"></select>
-                <button onclick="window.saveAssignment()" style="width:100%; padding:12px; background:var(--accent); color:white; border:none; border-radius:6px; margin-top:15px; font-weight:bold; cursor:pointer;">Update Record</button>
-            </div>
-            <button onclick="window.closeModal()" style="width:100%; padding:10px; background:#f1f5f9; border:none; border-radius:6px; margin-top:5px; cursor:pointer;">Cancel</button>
-        </div>
-    </div>
-
     <div class="sidebar" id="sidebar">
         <h2 style="color: var(--accent); font-size: 0.8rem; margin-bottom: 30px; letter-spacing:1px;">PV-COMMAND</h2>
         <div class="nav-btn active" onclick="window.switchView('fleet_manager', this)">Fleet & Drivers</div>
         <div class="nav-btn" onclick="window.switchView('passengers', this)">Passenger Registry</div>
         <div class="nav-btn" onclick="window.switchView('history', this)">History Logs</div>
-        <div class="nav-btn" onclick="window.switchView('terminals', this)">Terminals</div>
+        <div class="nav-btn" onclick="window.switchView('terminals', this)">Terminals & Pins</div>
         <div class="nav-btn" onclick="window.switchView('live', this)" style="margin-top:20px; border: 1px solid #334155;">🛰️ LIVE HUB</div>
         <button onclick="window.handleLogout()" style="margin-top: auto; padding: 10px; background: #334155; color: white; border: none; border-radius: 6px;">Logout</button>
     </div>
@@ -78,13 +59,28 @@
     <div class="main" id="main-content">
         <div class="header">
             <h1 id="view-title" style="margin:0; font-size: 1rem;">FLEET MANAGER</h1>
-            <div id="sync-indicator" style="font-size:0.6rem; color:var(--success); font-weight:bold;">● SYSTEM ONLINE</div>
+            <button id="add-btn" style="display:none; padding:8px 15px; background:var(--accent); color:white; border:none; border-radius:6px; cursor:pointer; font-size:0.75rem;">+ Add New</button>
         </div>
-        <div class="view-container">
-            <div id="view-table"><table><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div>
-            <div id="view-live" style="display:none;"><div id="admin-map" style="height:calc(100vh - 160px); width:100%;"></div></div>
+        <div class="view-container" id="container-scroll">
+            <div id="standard-view"><table><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div>
+            
+            <div id="terminal-view" class="terminal-split" style="display:none;">
+                <div style="overflow-y:auto;">
+                    <table>
+                        <thead><tr><th>Terminal Name</th><th>Actions</th></tr></thead>
+                        <tbody id="terminal-table-body"></tbody>
+                    </table>
+                </div>
+                <div>
+                    <div id="terminal-map"></div>
+                    <div style="margin-top:10px; font-size:0.7rem; color:#64748b; background:#fff; padding:10px; border-radius:8px; border:1px solid #e2e8f0;">
+                        <strong>Map Controls:</strong> Click on map to set coordinates for new terminal.
+                        <div id="coord-display" style="margin-top:5px; font-family:monospace;">Lat: -- | Lon: --</div>
+                    </div>
+                </div>
+            </div>
         </div>
-        <footer><span>Alpha v0.011 | Fixed Schema</span><span>Last Sync: Real-time</span></footer>
+        <footer><span>Alpha v0.012 | Terminal Restoration</span><span>Status: Connected</span></footer>
     </div>
 
     <script type="module">
@@ -92,8 +88,9 @@
         const S_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
         const S_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
         const client = createClient(S_URL, S_KEY);
+        mapboxgl.accessToken = 'pk.eyJ1Ijoiam9uYXRoYW5idWxsIiwiYSI6ImNsbHpsenZreDA0eG0zZHA0N3B5ZnR5Z3AifQ.4E-T_B0z3n0n_Y7L_xW6UQ';
         
-        let currentTable = 'fleet_manager', activePlate = null;
+        let currentTable = 'fleet_manager', map = null, currentMarker = null;
 
         window.handleLogin = async () => {
             const { error } = await client.auth.signInWithPassword({
@@ -117,66 +114,70 @@
             currentTable = tableName;
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             el.classList.add('active');
-            document.getElementById('view-table').style.display = tableName === 'live' ? 'none' : 'block';
-            document.getElementById('view-live').style.display = tableName === 'live' ? 'block' : 'none';
-            document.getElementById('view-title').innerText = tableName.toUpperCase().replace('_', ' ');
+            
+            document.getElementById('standard-view').style.display = tableName === 'terminals' ? 'none' : 'block';
+            document.getElementById('terminal-view').style.display = tableName === 'terminals' ? 'grid' : 'none';
+            document.getElementById('add-btn').style.display = tableName === 'terminals' ? 'block' : 'none';
+            document.getElementById('view-title').innerText = tableName.toUpperCase();
+
+            if (tableName === 'terminals') initTerminalMap();
             refreshData();
         };
+
+        function initTerminalMap() {
+            if (map) return;
+            map = new mapboxgl.Map({
+                container: 'terminal-map',
+                style: 'mapbox://styles/mapbox/streets-v12',
+                center: [121.0483, 14.5995], // Default PH center
+                zoom: 12
+            });
+
+            map.on('click', (e) => {
+                const { lng, lat } = e.lngLat;
+                document.getElementById('coord-display').innerText = `Lat: ${lat.toFixed(5)} | Lon: ${lng.toFixed(5)}`;
+                if (currentMarker) currentMarker.remove();
+                currentMarker = new mapboxgl.Marker({ color: '#3b82f6' }).setLngLat([lng, lat]).addTo(map);
+            });
+        }
 
         async function refreshData() {
             const body = document.getElementById('table-body');
             const head = document.getElementById('table-head');
-            body.innerHTML = '<tr><td colspan="4">Syncing...</td></tr>';
-
+            
             if (currentTable === 'fleet_manager') {
-                head.innerHTML = `<tr><th>Driver Name</th><th>Plate Number</th><th>Status</th><th>Action</th></tr>`;
-                const { data: drivers } = await client.from('user_profiles').select('*').eq('role', 'driver');
-                const { data: vehicles } = await client.from('vehicles').select('*');
-                body.innerHTML = '';
-                
-                drivers?.forEach(d => {
-                    const v = vehicles.find(veh => veh.assigned_driver_id === d.id);
-                    body.innerHTML += `<tr>
-                        <td><b>${d.full_name}</b><br><small>${d.phone_number || 'No Phone'}</small></td>
-                        <td>${v ? v.plate_number : '--'}</td>
-                        <td><span class="badge ${v ? 'badge-success' : 'badge-danger'}">${v ? 'ACTIVE' : 'IDLE'}</span></td>
-                        <td><button onclick="window.openTransfer('${v ? v.plate_number : ''}')">Assign</button></td>
-                    </tr>`;
-                });
-                vehicles?.filter(v => !v.assigned_driver_id).forEach(v => {
-                    body.innerHTML += `<tr style="background:#fff9f2"><td><i>Unassigned</i></td><td>${v.plate_number}</td><td><span class="badge badge-danger">ORPHAN</span></td><td><button onclick="window.openTransfer('${v.plate_number}')">Assign</button></td></tr>`;
-                });
-            } else if (currentTable === 'passengers') {
-                head.innerHTML = `<tr><th>Passenger</th><th>Phone Number</th><th>User ID</th></tr>`;
-                const { data } = await client.from('user_profiles').select('id, full_name, phone_number').eq('role', 'passenger');
-                body.innerHTML = data?.length ? data.map(p => `<tr><td><b>${p.full_name}</b></td><td>${p.phone_number || 'N/A'}</td><td style="font-size:0.6rem; color:#94a3b8;">${p.id}</td></tr>`).join('') : '<tr><td colspan="3">No passengers found.</td></tr>';
-            } else if (currentTable === 'history') {
-                head.innerHTML = `<tr><th>Time</th><th>Type</th><th>Plate</th><th>Details</th></tr>`;
-                const { data } = await client.from('vehicle_logs').select('*').order('timestamp', { ascending: false }).limit(30);
-                body.innerHTML = data?.map(l => `<tr><td>${new Date(l.timestamp).toLocaleTimeString()}</td><td><span class="tag-log tag-assignment">${l.log_type}</span></td><td><b>${l.plate_number}</b></td><td>${l.details?.reason || ''}</td></tr>`).join('') || '<tr><td colspan="4">No logs.</td></tr>';
+                head.innerHTML = `<tr><th>Driver</th><th>Plate</th><th>Status</th></tr>`;
+                const { data: d } = await client.from('user_profiles').select('*').eq('role', 'driver');
+                const { data: v } = await client.from('vehicles').select('*');
+                body.innerHTML = d?.map(driver => {
+                    const veh = v.find(veh => veh.assigned_driver_id === driver.id);
+                    return `<tr><td><b>${driver.full_name}</b></td><td>${veh?.plate_number || '--'}</td><td>${veh ? 'Active' : 'Idle'}</td></tr>`;
+                }).join('') || '';
+            } 
+            else if (currentTable === 'passengers') {
+                head.innerHTML = `<tr><th>Name</th><th>Phone</th><th>UID</th></tr>`;
+                const { data } = await client.from('user_profiles').select('*').eq('role', 'passenger');
+                body.innerHTML = data?.map(p => `<tr><td><b>${p.full_name}</b></td><td>${p.phone_number || 'N/A'}</td><td>${p.id.slice(0,8)}</td></tr>`).join('') || '';
+            }
+            else if (currentTable === 'terminals') {
+                const tBody = document.getElementById('terminal-table-body');
+                const { data } = await client.from('terminals').select('*');
+                tBody.innerHTML = data?.map(t => `
+                    <tr>
+                        <td><b>${t.name}</b><br><small>${t.start_lat}, ${t.start_lon}</small></td>
+                        <td><button onclick="window.zoomTo(${t.start_lat}, ${t.start_lon})">View</button></td>
+                    </tr>
+                `).join('') || '<tr><td>No terminals found</td></tr>';
             }
         }
 
-        window.openTransfer = async (plate) => {
-            activePlate = plate;
-            document.getElementById('active-plate-label').innerText = plate || "(Select Vehicle)";
-            document.getElementById('modal-overlay').style.display = 'flex';
-            const { data } = await client.from('user_profiles').select('id, full_name').eq('role', 'driver');
-            document.getElementById('driver-select').innerHTML = '<option value="">-- Unassign Driver --</option>' + 
-                data.map(d => `<option value="${d.id}">${d.full_name}</option>`).join('');
+        window.zoomTo = (lat, lon) => {
+            map.flyTo({ center: [lon, lat], zoom: 16 });
+            if (currentMarker) currentMarker.remove();
+            currentMarker = new mapboxgl.Marker({ color: '#ef4444' }).setLngLat([lon, lat]).addTo(map);
         };
 
-        window.saveAssignment = async () => {
-            const driverId = document.getElementById('driver-select').value || null;
-            if(!activePlate) return alert("Select a vehicle plate first.");
-            const { error } = await client.from('vehicles').update({ assigned_driver_id: driverId }).eq('plate_number', activePlate);
-            if (!error) {
-                await client.from('vehicle_logs').insert([{ plate_number: activePlate, log_type: 'ASSIGNMENT', details: { reason: `Transferred to driver ${driverId}` }}]);
-                window.closeModal(); refreshData();
-            }
-        };
-
-        window.closeModal = () => document.getElementById('modal-overlay').style.display = 'none';
+        // Auto-refresh logic
         setInterval(() => { if(currentTable !== 'live') refreshData(); }, 30000);
     </script>
 </body>
