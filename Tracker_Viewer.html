@@ -3,36 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Master Admin | Alpha v0.012</title>
+    <title>Master Admin | Alpha v0.013</title>
     <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
     <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
     <style>
         :root { --sidebar: #0f172a; --bg: #f8fafc; --accent: #3b82f6; --danger: #ef4444; --success: #10b981; }
         body { margin: 0; display: flex; height: 100vh; font-family: 'Inter', sans-serif; background: var(--bg); overflow: hidden; }
         
-        /* Navigation */
         .sidebar { width: 260px; background: var(--sidebar); color: white; display: none; flex-direction: column; padding: 20px; border-right: 1px solid #1e293b; }
         .nav-btn { padding: 12px; cursor: pointer; border-radius: 6px; margin-bottom: 5px; font-size: 0.85rem; color: #94a3b8; transition: 0.2s; display: flex; align-items: center; gap: 10px; }
         .nav-btn.active { background: var(--accent); color: white; }
 
-        /* Main Layout */
         .main { flex: 1; display: none; flex-direction: column; overflow: hidden; position: relative; }
         .header { background: white; padding: 15px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
-        .view-container { padding: 20px; overflow-y: auto; flex: 1; padding-bottom: 60px; }
+        .view-container { padding: 20px; overflow-y: auto; flex: 1; }
         
-        /* Split View for Terminals */
-        .terminal-split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; height: 100%; }
-        #terminal-map { width: 100%; height: 500px; border-radius: 12px; border: 1px solid #e2e8f0; }
+        /* Terminal Layout */
+        .terminal-split { display: grid; grid-template-columns: 350px 1fr; gap: 20px; height: calc(100vh - 120px); }
+        #terminal-map { width: 100%; height: 100%; border-radius: 12px; border: 1px solid #e2e8f0; }
 
-        /* Tables & UI */
         table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         th { text-align: left; padding: 12px; background: #f8fafc; font-size: 0.7rem; color: #64748b; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; }
         td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 0.8rem; }
+
+        .form-card { background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px; }
+        .form-card input { width: 100%; padding: 8px; margin: 5px 0 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
         
         #auth-screen { position: fixed; inset: 0; background: var(--sidebar); z-index: 999; display: flex; align-items: center; justify-content: center; }
         .auth-card { background: white; padding: 40px; border-radius: 12px; width: 350px; text-align: center; }
-        
-        footer { position: absolute; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #e2e8f0; padding: 8px 20px; font-size: 0.7rem; color: #94a3b8; display: flex; justify-content: space-between; }
     </style>
 </head>
 <body>
@@ -40,47 +38,46 @@
     <div id="auth-screen">
         <div class="auth-card">
             <h1>Admin Login</h1>
-            <input type="email" id="login-email" placeholder="Email" style="width:100%; padding:10px; margin:10px 0; border:1px solid #ddd;">
-            <input type="password" id="login-pass" placeholder="Password" style="width:100%; padding:10px; margin:10px 0; border:1px solid #ddd;">
+            <input type="email" id="login-email" placeholder="Email">
+            <input type="password" id="login-pass" placeholder="Password">
             <button onclick="window.handleLogin()" style="width:100%; padding:10px; background:var(--accent); color:white; border:none; border-radius:4px; cursor:pointer;">Login</button>
         </div>
     </div>
 
     <div class="sidebar" id="sidebar">
-        <h2 style="color: var(--accent); font-size: 0.8rem; margin-bottom: 30px; letter-spacing:1px;">PV-COMMAND</h2>
+        <h2 style="color: var(--accent); font-size: 0.8rem; margin-bottom: 30px;">PV-COMMAND</h2>
         <div class="nav-btn active" onclick="window.switchView('fleet_manager', this)">Fleet & Drivers</div>
         <div class="nav-btn" onclick="window.switchView('passengers', this)">Passenger Registry</div>
         <div class="nav-btn" onclick="window.switchView('history', this)">History Logs</div>
         <div class="nav-btn" onclick="window.switchView('terminals', this)">Terminals & Pins</div>
-        <div class="nav-btn" onclick="window.switchView('live', this)" style="margin-top:20px; border: 1px solid #334155;">🛰️ LIVE HUB</div>
         <button onclick="window.handleLogout()" style="margin-top: auto; padding: 10px; background: #334155; color: white; border: none; border-radius: 6px;">Logout</button>
     </div>
 
     <div class="main" id="main-content">
         <div class="header">
             <h1 id="view-title" style="margin:0; font-size: 1rem;">FLEET MANAGER</h1>
-            <button id="add-btn" style="display:none; padding:8px 15px; background:var(--accent); color:white; border:none; border-radius:6px; cursor:pointer; font-size:0.75rem;">+ Add New</button>
         </div>
-        <div class="view-container" id="container-scroll">
+        
+        <div class="view-container">
             <div id="standard-view"><table><thead id="table-head"></thead><tbody id="table-body"></tbody></table></div>
             
             <div id="terminal-view" class="terminal-split" style="display:none;">
-                <div style="overflow-y:auto;">
+                <div style="display:flex; flex-direction:column; gap:15px; overflow-y:auto;">
+                    <div class="form-card">
+                        <h3 style="margin:0 0 10px; font-size:0.85rem;">Create New Terminal</h3>
+                        <label style="font-size:0.7rem;">Terminal Name</label>
+                        <input type="text" id="t-name" placeholder="e.g. North Station">
+                        <div id="t-coords" style="font-size:0.7rem; color:var(--accent); margin-bottom:10px;">Click map to set location</div>
+                        <button onclick="window.saveTerminal()" style="width:100%; padding:8px; background:var(--success); color:white; border:none; border-radius:4px; cursor:pointer;">Save Terminal</button>
+                    </div>
                     <table>
-                        <thead><tr><th>Terminal Name</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>Terminal List</th></tr></thead>
                         <tbody id="terminal-table-body"></tbody>
                     </table>
                 </div>
-                <div>
-                    <div id="terminal-map"></div>
-                    <div style="margin-top:10px; font-size:0.7rem; color:#64748b; background:#fff; padding:10px; border-radius:8px; border:1px solid #e2e8f0;">
-                        <strong>Map Controls:</strong> Click on map to set coordinates for new terminal.
-                        <div id="coord-display" style="margin-top:5px; font-family:monospace;">Lat: -- | Lon: --</div>
-                    </div>
-                </div>
+                <div id="terminal-map"></div>
             </div>
         </div>
-        <footer><span>Alpha v0.012 | Terminal Restoration</span><span>Status: Connected</span></footer>
     </div>
 
     <script type="module">
@@ -88,9 +85,11 @@
         const S_URL = 'https://uwptdzzlklkwoxudvrgc.supabase.co';
         const S_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
         const client = createClient(S_URL, S_KEY);
+        
+        // IMPORTANT: REPLACE THIS TOKEN WITH YOUR OWN ACTIVE MAPBOX TOKEN
         mapboxgl.accessToken = 'pk.eyJ1Ijoiam9uYXRoYW5idWxsIiwiYSI6ImNsbHpsenZreDA0eG0zZHA0N3B5ZnR5Z3AifQ.4E-T_B0z3n0n_Y7L_xW6UQ';
         
-        let currentTable = 'fleet_manager', map = null, currentMarker = null;
+        let currentTable = 'fleet_manager', map = null, marker = null, selectedCoords = null;
 
         window.handleLogin = async () => {
             const { error } = await client.auth.signInWithPassword({
@@ -117,7 +116,6 @@
             
             document.getElementById('standard-view').style.display = tableName === 'terminals' ? 'none' : 'block';
             document.getElementById('terminal-view').style.display = tableName === 'terminals' ? 'grid' : 'none';
-            document.getElementById('add-btn').style.display = tableName === 'terminals' ? 'block' : 'none';
             document.getElementById('view-title').innerText = tableName.toUpperCase();
 
             if (tableName === 'terminals') initTerminalMap();
@@ -129,56 +127,64 @@
             map = new mapboxgl.Map({
                 container: 'terminal-map',
                 style: 'mapbox://styles/mapbox/streets-v12',
-                center: [121.0483, 14.5995], // Default PH center
+                center: [121.0483, 14.5995],
                 zoom: 12
             });
 
             map.on('click', (e) => {
-                const { lng, lat } = e.lngLat;
-                document.getElementById('coord-display').innerText = `Lat: ${lat.toFixed(5)} | Lon: ${lng.toFixed(5)}`;
-                if (currentMarker) currentMarker.remove();
-                currentMarker = new mapboxgl.Marker({ color: '#3b82f6' }).setLngLat([lng, lat]).addTo(map);
+                selectedCoords = e.lngLat;
+                document.getElementById('t-coords').innerText = `Lat: ${selectedCoords.lat.toFixed(5)} | Lon: ${selectedCoords.lng.toFixed(5)}`;
+                if (marker) marker.remove();
+                marker = new mapboxgl.Marker({ color: '#3b82f6' }).setLngLat(selectedCoords).addTo(map);
             });
         }
 
-        async function refreshData() {
-            const body = document.getElementById('table-body');
-            const head = document.getElementById('table-head');
+        window.saveTerminal = async () => {
+            const name = document.getElementById('t-name').value;
+            if (!name || !selectedCoords) return alert("Please provide a name and pin a location on the map.");
             
+            const { error } = await client.from('terminals').insert([{
+                name: name,
+                start_lat: selectedCoords.lat,
+                start_lon: selectedCoords.lng
+            }]);
+
+            if (error) alert(error.message);
+            else {
+                document.getElementById('t-name').value = '';
+                refreshData();
+            }
+        };
+
+        async function refreshData() {
             if (currentTable === 'fleet_manager') {
+                const head = document.getElementById('table-head');
                 head.innerHTML = `<tr><th>Driver</th><th>Plate</th><th>Status</th></tr>`;
                 const { data: d } = await client.from('user_profiles').select('*').eq('role', 'driver');
                 const { data: v } = await client.from('vehicles').select('*');
-                body.innerHTML = d?.map(driver => {
+                document.getElementById('table-body').innerHTML = d?.map(driver => {
                     const veh = v.find(veh => veh.assigned_driver_id === driver.id);
                     return `<tr><td><b>${driver.full_name}</b></td><td>${veh?.plate_number || '--'}</td><td>${veh ? 'Active' : 'Idle'}</td></tr>`;
                 }).join('') || '';
             } 
-            else if (currentTable === 'passengers') {
-                head.innerHTML = `<tr><th>Name</th><th>Phone</th><th>UID</th></tr>`;
-                const { data } = await client.from('user_profiles').select('*').eq('role', 'passenger');
-                body.innerHTML = data?.map(p => `<tr><td><b>${p.full_name}</b></td><td>${p.phone_number || 'N/A'}</td><td>${p.id.slice(0,8)}</td></tr>`).join('') || '';
-            }
             else if (currentTable === 'terminals') {
-                const tBody = document.getElementById('terminal-table-body');
                 const { data } = await client.from('terminals').select('*');
-                tBody.innerHTML = data?.map(t => `
-                    <tr>
-                        <td><b>${t.name}</b><br><small>${t.start_lat}, ${t.start_lon}</small></td>
-                        <td><button onclick="window.zoomTo(${t.start_lat}, ${t.start_lon})">View</button></td>
-                    </tr>
-                `).join('') || '<tr><td>No terminals found</td></tr>';
+                document.getElementById('terminal-table-body').innerHTML = data?.map(t => `
+                    <tr><td>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <b>${t.name}</b>
+                            <button onclick="window.zoomTo(${t.start_lat}, ${t.start_lon})">Locate</button>
+                        </div>
+                    </td></tr>
+                `).join('') || '';
             }
         }
 
         window.zoomTo = (lat, lon) => {
             map.flyTo({ center: [lon, lat], zoom: 16 });
-            if (currentMarker) currentMarker.remove();
-            currentMarker = new mapboxgl.Marker({ color: '#ef4444' }).setLngLat([lon, lat]).addTo(map);
+            if (marker) marker.remove();
+            marker = new mapboxgl.Marker({ color: '#ef4444' }).setLngLat([lon, lat]).addTo(map);
         };
-
-        // Auto-refresh logic
-        setInterval(() => { if(currentTable !== 'live') refreshData(); }, 30000);
     </script>
 </body>
 </html>
