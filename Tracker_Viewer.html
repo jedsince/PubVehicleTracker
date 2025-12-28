@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Master Admin | Alpha v0.013</title>
+    <title>Master Admin | Alpha v0.014</title>
     <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
     <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
     <style>
@@ -18,7 +18,6 @@
         .header { background: white; padding: 15px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
         .view-container { padding: 20px; overflow-y: auto; flex: 1; }
         
-        /* Terminal Layout */
         .terminal-split { display: grid; grid-template-columns: 350px 1fr; gap: 20px; height: calc(100vh - 120px); }
         #terminal-map { width: 100%; height: 100%; border-radius: 12px; border: 1px solid #e2e8f0; }
 
@@ -71,7 +70,7 @@
                         <button onclick="window.saveTerminal()" style="width:100%; padding:8px; background:var(--success); color:white; border:none; border-radius:4px; cursor:pointer;">Save Terminal</button>
                     </div>
                     <table>
-                        <thead><tr><th>Terminal List</th></tr></thead>
+                        <thead><tr><th>Terminal List</th><th>Actions</th></tr></thead>
                         <tbody id="terminal-table-body"></tbody>
                     </table>
                 </div>
@@ -86,8 +85,8 @@
         const S_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
         const client = createClient(S_URL, S_KEY);
         
-        // IMPORTANT: REPLACE THIS TOKEN WITH YOUR OWN ACTIVE MAPBOX TOKEN
-        mapboxgl.accessToken = 'pk.eyJ1Ijoiam9uYXRoYW5idWxsIiwiYSI6ImNsbHpsenZreDA0eG0zZHA0N3B5ZnR5Z3AifQ.4E-T_B0z3n0n_Y7L_xW6UQ';
+        // STRICTLY USING PROVIDED TOKEN
+        mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
         
         let currentTable = 'fleet_manager', map = null, marker = null, selectedCoords = null;
 
@@ -142,18 +141,22 @@
         window.saveTerminal = async () => {
             const name = document.getElementById('t-name').value;
             if (!name || !selectedCoords) return alert("Please provide a name and pin a location on the map.");
-            
-            const { error } = await client.from('terminals').insert([{
-                name: name,
-                start_lat: selectedCoords.lat,
-                start_lon: selectedCoords.lng
-            }]);
-
+            const { error } = await client.from('terminals').insert([{ name: name, start_lat: selectedCoords.lat, start_lon: selectedCoords.lng }]);
             if (error) alert(error.message);
             else {
                 document.getElementById('t-name').value = '';
+                if (marker) marker.remove();
+                selectedCoords = null;
+                document.getElementById('t-coords').innerText = "Click map to set location";
                 refreshData();
             }
+        };
+
+        window.deleteTerminal = async (id) => {
+            if (!confirm("Are you sure you want to delete this terminal?")) return;
+            const { error } = await client.from('terminals').delete().eq('id', id);
+            if (error) alert(error.message);
+            else refreshData();
         };
 
         async function refreshData() {
@@ -173,7 +176,10 @@
                     <tr><td>
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <b>${t.name}</b>
-                            <button onclick="window.zoomTo(${t.start_lat}, ${t.start_lon})">Locate</button>
+                            <div>
+                                <button onclick="window.zoomTo(${t.start_lat}, ${t.start_lon})" style="padding:4px 8px;">Locate</button>
+                                <button onclick="window.deleteTerminal('${t.id}')" style="padding:4px 8px; background:var(--danger); color:white; border:none; border-radius:4px;">Del</button>
+                            </div>
                         </div>
                     </td></tr>
                 `).join('') || '';
