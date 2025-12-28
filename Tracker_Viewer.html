@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Master Admin | Alpha v0.015</title>
+    <title>Master Admin | Alpha v0.016</title>
     <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
     <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
     <style>
@@ -124,7 +124,7 @@
 
         window.switchView = (tableName, el) => {
             currentTable = tableName;
-            localStorage.setItem('activeView', tableName); // Persist view
+            localStorage.setItem('activeView', tableName);
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
             if(el) el.classList.add('active');
             
@@ -151,6 +151,11 @@
                 zoom: 12
             });
 
+            map.on('load', () => {
+                map.addSource('route', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: [] } } });
+                map.addLayer({ id: 'route', type: 'line', source: 'route', layout: { 'line-join': 'round', 'line-cap': 'round' }, paint: { 'line-color': '#3b82f6', 'line-width': 4, 'line-dasharray': [2, 1] } });
+            });
+
             map.on('click', (e) => {
                 if (activeMode === 'start') {
                     pA = e.lngLat;
@@ -163,6 +168,16 @@
                     if (endMarker) endMarker.remove();
                     endMarker = new mapboxgl.Marker({ color: '#ef4444' }).setLngLat(pB).addTo(map);
                 }
+                updateRouteLine();
+            });
+        }
+
+        function updateRouteLine() {
+            if (!pA || !pB || !map.getSource('route')) return;
+            map.getSource('route').setData({
+                type: 'Feature',
+                properties: {},
+                geometry: { type: 'LineString', coordinates: [[pA.lng, pA.lat], [pB.lng, pB.lat]] }
             });
         }
 
@@ -182,6 +197,7 @@
                 document.getElementById('end-display').innerText = "Click map to set";
                 if(startMarker) startMarker.remove();
                 if(endMarker) endMarker.remove();
+                if(map.getSource('route')) map.getSource('route').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: [] } });
                 refreshData();
             }
         };
@@ -223,14 +239,16 @@
         }
 
         window.zoomPair = (la1, lo1, la2, lo2) => {
+            pA = {lat: la1, lng: lo1};
+            pB = {lat: la2, lng: lo2};
             const bounds = new mapboxgl.LngLatBounds().extend([lo1, la1]).extend([lo2, la2]);
             map.fitBounds(bounds, { padding: 50 });
             if(startMarker) startMarker.remove();
             if(endMarker) endMarker.remove();
             startMarker = new mapboxgl.Marker({ color: '#10b981' }).setLngLat([lo1, la1]).addTo(map);
             endMarker = new mapboxgl.Marker({ color: '#ef4444' }).setLngLat([lo2, la2]).addTo(map);
+            updateRouteLine();
         };
     </script>
 </body>
 </html>
-
