@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Master Admin | Alpha v0.014</title>
+    <title>Master Admin | Alpha v0.015</title>
     <link href="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.css" rel="stylesheet">
     <script src="https://api.mapbox.com/mapbox-gl-js/v2.15.0/mapbox-gl.js"></script>
     <style>
@@ -18,7 +18,7 @@
         .header { background: white; padding: 15px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
         .view-container { padding: 20px; overflow-y: auto; flex: 1; }
         
-        .terminal-split { display: grid; grid-template-columns: 350px 1fr; gap: 20px; height: calc(100vh - 120px); }
+        .terminal-split { display: grid; grid-template-columns: 380px 1fr; gap: 20px; height: calc(100vh - 120px); }
         #terminal-map { width: 100%; height: 100%; border-radius: 12px; border: 1px solid #e2e8f0; }
 
         table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
@@ -28,6 +28,9 @@
         .form-card { background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px; }
         .form-card input { width: 100%; padding: 8px; margin: 5px 0 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
         
+        .coord-box { font-size: 0.65rem; padding: 8px; background: #f1f5f9; border-radius: 4px; margin-bottom: 10px; cursor: pointer; border: 1px solid transparent; }
+        .coord-box.active { border-color: var(--accent); background: #eff6ff; }
+
         #auth-screen { position: fixed; inset: 0; background: var(--sidebar); z-index: 999; display: flex; align-items: center; justify-content: center; }
         .auth-card { background: white; padding: 40px; border-radius: 12px; width: 350px; text-align: center; }
     </style>
@@ -45,10 +48,10 @@
 
     <div class="sidebar" id="sidebar">
         <h2 style="color: var(--accent); font-size: 0.8rem; margin-bottom: 30px;">PV-COMMAND</h2>
-        <div class="nav-btn active" onclick="window.switchView('fleet_manager', this)">Fleet & Drivers</div>
-        <div class="nav-btn" onclick="window.switchView('passengers', this)">Passenger Registry</div>
-        <div class="nav-btn" onclick="window.switchView('history', this)">History Logs</div>
-        <div class="nav-btn" onclick="window.switchView('terminals', this)">Terminals & Pins</div>
+        <div class="nav-btn" data-view="fleet_manager" onclick="window.switchView('fleet_manager', this)">Fleet & Drivers</div>
+        <div class="nav-btn" data-view="passengers" onclick="window.switchView('passengers', this)">Passenger Registry</div>
+        <div class="nav-btn" data-view="history" onclick="window.switchView('history', this)">History Logs</div>
+        <div class="nav-btn" data-view="terminals" onclick="window.switchView('terminals', this)">Terminals & Pins</div>
         <button onclick="window.handleLogout()" style="margin-top: auto; padding: 10px; background: #334155; color: white; border: none; border-radius: 6px;">Logout</button>
     </div>
 
@@ -63,14 +66,23 @@
             <div id="terminal-view" class="terminal-split" style="display:none;">
                 <div style="display:flex; flex-direction:column; gap:15px; overflow-y:auto;">
                     <div class="form-card">
-                        <h3 style="margin:0 0 10px; font-size:0.85rem;">Create New Terminal</h3>
-                        <label style="font-size:0.7rem;">Terminal Name</label>
-                        <input type="text" id="t-name" placeholder="e.g. North Station">
-                        <div id="t-coords" style="font-size:0.7rem; color:var(--accent); margin-bottom:10px;">Click map to set location</div>
-                        <button onclick="window.saveTerminal()" style="width:100%; padding:8px; background:var(--success); color:white; border:none; border-radius:4px; cursor:pointer;">Save Terminal</button>
+                        <h3 style="margin:0 0 10px; font-size:0.85rem;">Create Terminal Route</h3>
+                        <input type="text" id="t-name" placeholder="Terminal/Route Name">
+                        
+                        <div id="start-box" class="coord-box active" onclick="window.setMode('start')">
+                            <strong>START POINT (A)</strong><br>
+                            <span id="start-display">Click map to set</span>
+                        </div>
+                        
+                        <div id="end-box" class="coord-box" onclick="window.setMode('end')">
+                            <strong>END POINT (B)</strong><br>
+                            <span id="end-display">Click map to set</span>
+                        </div>
+
+                        <button onclick="window.saveTerminal()" style="width:100%; padding:8px; background:var(--success); color:white; border:none; border-radius:4px; cursor:pointer;">Save Terminal Pair</button>
                     </div>
                     <table>
-                        <thead><tr><th>Terminal List</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>Saved Terminals</th><th>Actions</th></tr></thead>
                         <tbody id="terminal-table-body"></tbody>
                     </table>
                 </div>
@@ -85,10 +97,11 @@
         const S_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3cHRkenpsa2xrd294dWR2cmdjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxNDg1NzIsImV4cCI6MjA3NzcyNDU3Mn0.fziXt9gx2ZBDiUxdzU2gupMgXBuneOteWa90L3C5F1k';
         const client = createClient(S_URL, S_KEY);
         
-        // STRICTLY USING PROVIDED TOKEN
         mapboxgl.accessToken = 'pk.eyJ1Ijoiam1hZXN0cm8iLCJhIjoiY2xrZjVvZXcxMWF5ZTNlanNlcGJrcWhqNyJ9.0nAf21DdJ4dlaSmyQrkwxg';
         
-        let currentTable = 'fleet_manager', map = null, marker = null, selectedCoords = null;
+        let currentTable = localStorage.getItem('activeView') || 'fleet_manager';
+        let map = null, startMarker = null, endMarker = null;
+        let pA = null, pB = null, activeMode = 'start';
 
         window.handleLogin = async () => {
             const { error } = await client.auth.signInWithPassword({
@@ -97,21 +110,23 @@
             if (error) alert(error.message);
         };
 
-        window.handleLogout = () => { client.auth.signOut(); location.reload(); };
+        window.handleLogout = () => { client.auth.signOut(); localStorage.clear(); location.reload(); };
 
         client.auth.onAuthStateChange((event, session) => {
             if (session) {
                 document.getElementById('auth-screen').style.display = 'none';
                 document.getElementById('sidebar').style.display = 'flex';
                 document.getElementById('main-content').style.display = 'flex';
-                window.switchView('fleet_manager', document.querySelector('.nav-btn'));
+                const lastView = localStorage.getItem('activeView') || 'fleet_manager';
+                window.switchView(lastView, document.querySelector(`[data-view="${lastView}"]`));
             }
         });
 
         window.switchView = (tableName, el) => {
             currentTable = tableName;
+            localStorage.setItem('activeView', tableName); // Persist view
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-            el.classList.add('active');
+            if(el) el.classList.add('active');
             
             document.getElementById('standard-view').style.display = tableName === 'terminals' ? 'none' : 'block';
             document.getElementById('terminal-view').style.display = tableName === 'terminals' ? 'grid' : 'none';
@@ -119,6 +134,12 @@
 
             if (tableName === 'terminals') initTerminalMap();
             refreshData();
+        };
+
+        window.setMode = (mode) => {
+            activeMode = mode;
+            document.getElementById('start-box').classList.toggle('active', mode === 'start');
+            document.getElementById('end-box').classList.toggle('active', mode === 'end');
         };
 
         function initTerminalMap() {
@@ -131,32 +152,44 @@
             });
 
             map.on('click', (e) => {
-                selectedCoords = e.lngLat;
-                document.getElementById('t-coords').innerText = `Lat: ${selectedCoords.lat.toFixed(5)} | Lon: ${selectedCoords.lng.toFixed(5)}`;
-                if (marker) marker.remove();
-                marker = new mapboxgl.Marker({ color: '#3b82f6' }).setLngLat(selectedCoords).addTo(map);
+                if (activeMode === 'start') {
+                    pA = e.lngLat;
+                    document.getElementById('start-display').innerText = `${pA.lat.toFixed(4)}, ${pA.lng.toFixed(4)}`;
+                    if (startMarker) startMarker.remove();
+                    startMarker = new mapboxgl.Marker({ color: '#10b981' }).setLngLat(pA).addTo(map);
+                } else {
+                    pB = e.lngLat;
+                    document.getElementById('end-display').innerText = `${pB.lat.toFixed(4)}, ${pB.lng.toFixed(4)}`;
+                    if (endMarker) endMarker.remove();
+                    endMarker = new mapboxgl.Marker({ color: '#ef4444' }).setLngLat(pB).addTo(map);
+                }
             });
         }
 
         window.saveTerminal = async () => {
             const name = document.getElementById('t-name').value;
-            if (!name || !selectedCoords) return alert("Please provide a name and pin a location on the map.");
-            const { error } = await client.from('terminals').insert([{ name: name, start_lat: selectedCoords.lat, start_lon: selectedCoords.lng }]);
+            if (!name || !pA || !pB) return alert("Missing data. Set Name, Start, and End points.");
+            
+            const { error } = await client.from('terminals').insert([{ 
+                name, start_lat: pA.lat, start_lon: pA.lng, end_lat: pB.lat, end_lon: pB.lng 
+            }]);
+
             if (error) alert(error.message);
             else {
                 document.getElementById('t-name').value = '';
-                if (marker) marker.remove();
-                selectedCoords = null;
-                document.getElementById('t-coords').innerText = "Click map to set location";
+                pA = null; pB = null;
+                document.getElementById('start-display').innerText = "Click map to set";
+                document.getElementById('end-display').innerText = "Click map to set";
+                if(startMarker) startMarker.remove();
+                if(endMarker) endMarker.remove();
                 refreshData();
             }
         };
 
         window.deleteTerminal = async (id) => {
-            if (!confirm("Are you sure you want to delete this terminal?")) return;
-            const { error } = await client.from('terminals').delete().eq('id', id);
-            if (error) alert(error.message);
-            else refreshData();
+            if (!confirm("Delete terminal?")) return;
+            await client.from('terminals').delete().eq('id', id);
+            refreshData();
         };
 
         async function refreshData() {
@@ -175,9 +208,12 @@
                 document.getElementById('terminal-table-body').innerHTML = data?.map(t => `
                     <tr><td>
                         <div style="display:flex; justify-content:space-between; align-items:center;">
-                            <b>${t.name}</b>
                             <div>
-                                <button onclick="window.zoomTo(${t.start_lat}, ${t.start_lon})" style="padding:4px 8px;">Locate</button>
+                                <b>${t.name}</b><br>
+                                <small>A: ${t.start_lat.toFixed(2)} | B: ${t.end_lat.toFixed(2)}</small>
+                            </div>
+                            <div>
+                                <button onclick="window.zoomPair(${t.start_lat}, ${t.start_lon}, ${t.end_lat}, ${t.end_lon})" style="padding:4px 8px;">View</button>
                                 <button onclick="window.deleteTerminal('${t.id}')" style="padding:4px 8px; background:var(--danger); color:white; border:none; border-radius:4px;">Del</button>
                             </div>
                         </div>
@@ -186,11 +222,15 @@
             }
         }
 
-        window.zoomTo = (lat, lon) => {
-            map.flyTo({ center: [lon, lat], zoom: 16 });
-            if (marker) marker.remove();
-            marker = new mapboxgl.Marker({ color: '#ef4444' }).setLngLat([lon, lat]).addTo(map);
+        window.zoomPair = (la1, lo1, la2, lo2) => {
+            const bounds = new mapboxgl.LngLatBounds().extend([lo1, la1]).extend([lo2, la2]);
+            map.fitBounds(bounds, { padding: 50 });
+            if(startMarker) startMarker.remove();
+            if(endMarker) endMarker.remove();
+            startMarker = new mapboxgl.Marker({ color: '#10b981' }).setLngLat([lo1, la1]).addTo(map);
+            endMarker = new mapboxgl.Marker({ color: '#ef4444' }).setLngLat([lo2, la2]).addTo(map);
         };
     </script>
 </body>
 </html>
+
